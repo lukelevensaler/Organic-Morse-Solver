@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """
 Morse Solver - Succinct entry point for all algorithm operations
 Usage: 
