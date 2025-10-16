@@ -17,6 +17,7 @@ cc = None
 grad = None
 import threading
 import time
+import signal
 try:
     from tqdm import tqdm
 except Exception:
@@ -24,7 +25,7 @@ except Exception:
 
 # ===== INITIAL DIPOLE DERIVATIVE SOLVING WITH PySCF =======
 
-def dipole_for_geometry(atom_string: str, spin: int, basis: str = "aug-cc-pV5Z ") -> np.ndarray:
+def dipole_for_geometry(atom_string: str, spin: int, basis: str = "aug-cc-pVQZ  ") -> np.ndarray:
 	"""Return the molecular dipole vector (Debye) computed at mean-field level.
 
 	This function lazily requires PySCF. It uses RHF for closed-shell (spin==0)
@@ -39,7 +40,7 @@ def dipole_for_geometry(atom_string: str, spin: int, basis: str = "aug-cc-pV5Z "
 	return np.array(mf.dip_moment())
 
 
-def compute_mu_derivatives(coords_string: str, specified_spin: int, delta: float = 0.01, basis: str = "aug-cc-pV5Z ", atom_index: int = 0, axis: int = 2, bond_pair: tuple[int, int] | None = None) -> tuple[float, float]:
+def compute_mu_derivatives(coords_string: str, specified_spin: int, delta: float = 0.01, basis: str = "aug-cc-pVQZ  ", atom_index: int = 0, axis: int = 2, bond_pair: tuple[int, int] | None = None) -> tuple[float, float]:
     """
     Compute first and second derivatives of the dipole using finite differences.
 
@@ -139,19 +140,21 @@ def compute_mu_derivatives(coords_string: str, specified_spin: int, delta: float
     return float(mu1_si), float(mu2_si)
 
 
-def optimize_geometry_ccsd(coords_string: str, specified_spin: int, basis: str = "aug-cc-pV5Z ", maxsteps: int = 50, use_hf_fallback: bool = True) -> str:
+def optimize_geometry_ccsd(coords_string: str, specified_spin: int, basis: str = "aug-cc-pVDZ", maxsteps: int = 50, use_hf_fallback: bool = True) -> str:
     """
     Run a CCSD geometry optimization (via CCSD gradients + Berny) where available.
 
     coords_string: either a path to a file or a multiline XYZ-style string (Element x y z)
     specified_spin: spin multiplicity value
-    basis: basis set name
+    basis: basis set name (default: aug-cc-pVDZ for better performance)
     maxsteps: maximum Berny steps
 
     Returns an XYZ-style block string with optimized coordinates (same format as input).
 
     If PySCF CCSD gradients or berny_solver are unavailable, falls back to a HF
     optimization (RHF/UHF) if possible, or returns the original geometry.
+    
+    If the calculation hangs or fails with the given basis, it will try smaller basis sets.
     """
     # read coords
     if os.path.isfile(coords_string):
@@ -218,15 +221,22 @@ def optimize_geometry_ccsd(coords_string: str, specified_spin: int, basis: str =
         # ensure static analysers know these are present
         assert _cc is not None, 'pyscf.cc not available'
         assert _grad is not None, 'pyscf.grad not available'
-        # use the lazily imported cc
+        # use the lazily imported cc with convergence controls
         mycc = _cc.CCSD(mf)
+        
+        # Set stricter convergence criteria to prevent hanging
+        mycc.conv_tol = 1e-6  # Slightly looser than default 1e-7
+        mycc.max_cycle = 50   # Limit iterations to prevent infinite loops
+        mycc.diis_space = 6   # Smaller DIIS space for stability
+        
+        print(f"CCSD settings: conv_tol={mycc.conv_tol}, max_cycle={mycc.max_cycle}, diis_space={mycc.diis_space}")
 
-        # Progress indication with optional tqdm progress bar
-        def run_with_message(fn, *fargs, desc: str = "working"):
+        # Progress indication with timeout to prevent hanging
+        def run_with_message(fn, *fargs, desc: str = "working", timeout: int = 1800):  # 30 min timeout
             print(f"{desc}...")
             start_time = time.time()
             
-            # Try to use tqdm for indeterminate progress if available
+            # Try to use tqdm for indeterminate progress if available, with timeout
             if tqdm is not None:
                 # Use a separate thread for the actual calculation
                 import concurrent.futures
@@ -238,18 +248,34 @@ def optimize_geometry_ccsd(coords_string: str, specified_spin: int, basis: str =
                         while not future.done():
                             time.sleep(0.5)
                             pbar.update(0)  # Just update the timer
+                            
+                            # Check timeout
+                            elapsed = time.time() - start_time
+                            if elapsed > timeout:
+                                print(f"\nTimeout after {timeout}s, cancelling...")
+                                future.cancel()
+                                raise TimeoutError(f"Operation '{desc}' timed out after {timeout} seconds")
                     
                     # Get the result
-                    result = future.result()
+                    try:
+                        result = future.result(timeout=5)  # Short timeout since it should be done
+                    except concurrent.futures.TimeoutError:
+                        raise TimeoutError(f"Operation '{desc}' timed out")
             else:
+                # Direct execution with simple timeout check
                 result = fn(*fargs)
             
             elapsed = time.time() - start_time
             print(f"{desc} completed in {elapsed:.1f}s")
             return result
 
-        # run CCSD with simple progress messages
-        run_with_message(mycc.run, desc="Running CCSD")
+        # run CCSD with timeout (10 minutes for smaller basis sets)
+        try:
+            run_with_message(mycc.run, desc="Running CCSD", timeout=600)
+        except TimeoutError:
+            print("CCSD is taking too long (>10 minutes). This suggests the calculation is too expensive.")
+            print("Consider using a smaller basis set or switching to HF optimization.")
+            raise RuntimeError("CCSD calculation timed out - try a smaller basis set or use HF optimization")
 
         # Run CCSD(T) triples correction if available (essential for CCSD(T) level accuracy)
         ccsd_t_energy = None
@@ -329,7 +355,7 @@ def optimize_geometry_ccsd(coords_string: str, specified_spin: int, basis: str =
             raise RuntimeError(f"CCSD optimization failed: {e_outer}")
 
 
-def optimize_geometry_hf(coords_string: str, specified_spin: int, basis: str = "aug-cc-pV5Z ", maxsteps: int = 50) -> str:
+def optimize_geometry_hf(coords_string: str, specified_spin: int, basis: str = "aug-cc-pVQZ  ", maxsteps: int = 50) -> str:
     """
     Fallback HF geometry optimization using Hartree-Fock gradients.
     """

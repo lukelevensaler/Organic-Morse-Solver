@@ -49,7 +49,9 @@ def compute(
 	specified_spin: Optional[int] = typer.Option(None, help="Spin multiplicity. Required if coords provided."),
 	delta: Optional[float] = typer.Option(0.01, help="Finite-difference displacement magnitude in Å."),
 	bond: Optional[str] = typer.Option(None, help="Comma-separated bond indices 'n,x' to define bond vector for displacement."),
-	fwhm: Optional[float] = typer.Option(None, help="Assumed FWHM of the overtone band in cm^-1")) -> None:
+	fwhm: Optional[float] = typer.Option(None, help="Assumed FWHM of the overtone band in cm^-1"),
+	disable_ccsd: bool = typer.Option(False, "--disable-ccsd", help="Use HF optimization instead of CCSD (faster, less accurate)"),
+	basis_set: str = typer.Option("aug-cc-pVDZ", "--basis", help="Basis set for quantum calculations (default: aug-cc-pVDZ)")) -> None:
 	"""Interactive or positional compute.
 
 	If any of the positional arguments (amu_a, amu_b, fundamental_frequency,
@@ -97,14 +99,26 @@ def compute(
 				raise typer.BadParameter(f"Invalid bond indices: {e}")
 		# ensure delta is a float
 		delta_val = float(delta) if delta is not None else 0.01
-		# Always attempt to optimize geometry at CCSD-level (if available) before computing derivatives
+		# Choose optimization method based on user preference
+		if disable_ccsd:
+			typer.secho("Using HF optimization (--disable-ccsd flag set)", fg="yellow")
+			try:
+				from .derivatives_dipole_moment import optimize_geometry_hf
+				coords_to_use = optimize_geometry_hf(coords, specified_spin_int, basis=basis_set)
+			except Exception as e:
+				typer.secho(f"HF optimization failed: {e}", fg="red", err=True)
+				raise typer.Exit(code=2)
+		else:
+			# Attempt CCSD optimization with specified basis set
+			try:
+				coords_to_use = optimize_geometry_ccsd(coords, specified_spin_int, basis=basis_set)
+			except Exception as e:
+				typer.secho(f"CCSD optimization failed: {e}", fg="red", err=True)
+				typer.secho("Try using --disable-ccsd for faster HF optimization", fg="yellow")
+				typer.secho("Or use --basis=STO-3G for a smaller basis set", fg="yellow")
+				raise typer.Exit(code=2)
 		try:
-			coords_to_use = optimize_geometry_ccsd(coords, specified_spin_int)
-		except Exception as e:
-			typer.secho(f"CCSD optimization failed: {e}", fg="red", err=True)
-			raise typer.Exit(code=2)
-		try:
-			mu1_val, mu2_val = compute_mu_derivatives(coords_to_use, specified_spin_int, delta=delta_val, bond_pair=bond_pair)
+			mu1_val, mu2_val = compute_mu_derivatives(coords_to_use, specified_spin_int, delta=delta_val, bond_pair=bond_pair, basis=basis_set)
 		except Exception as e:
 			typer.secho(f"Error computing dipole derivatives from coordinates: {e}", fg="red", err=True)
 			raise typer.Exit(code=1)
@@ -169,15 +183,27 @@ def compute(
 			specified_spin_int = int(specified_spin)
 			# ensure delta is a float (use the same local variable or default)
 			delta_val = float(delta) if delta is not None else 0.01
-			# attempt CCSD optimization (will raise and exit if it fails)
-			try:
-				coords_to_use = optimize_geometry_ccsd(coords, specified_spin_int)
-			except Exception as e:
-				typer.secho(f"CCSD optimization failed: {e}", fg="red", err=True)
-				raise typer.Exit(code=2)
+			# Choose optimization method based on user preference
+			if disable_ccsd:
+				typer.secho("Using HF optimization (--disable-ccsd flag set)", fg="yellow")
+				try:
+					from .derivatives_dipole_moment import optimize_geometry_hf
+					coords_to_use = optimize_geometry_hf(coords, specified_spin_int, basis=basis_set)
+				except Exception as e:
+					typer.secho(f"HF optimization failed: {e}", fg="red", err=True)
+					raise typer.Exit(code=2)
+			else:
+				# attempt CCSD optimization (will raise and exit if it fails)
+				try:
+					coords_to_use = optimize_geometry_ccsd(coords, specified_spin_int, basis=basis_set)
+				except Exception as e:
+					typer.secho(f"CCSD optimization failed: {e}", fg="red", err=True)
+					typer.secho("Try using --disable-ccsd for faster HF optimization", fg="yellow")
+					typer.secho("Or use --basis=STO-3G for a smaller basis set", fg="yellow")
+					raise typer.Exit(code=2)
 			# compute dipole derivatives
 			try:
-				mu1_val, mu2_val = compute_mu_derivatives(coords_to_use, specified_spin_int, delta=delta_val, bond_pair=bond_pair)
+				mu1_val, mu2_val = compute_mu_derivatives(coords_to_use, specified_spin_int, delta=delta_val, bond_pair=bond_pair, basis=basis_set)
 			except Exception as e:
 				typer.secho(f"Error computing dipole derivatives from coordinates: {e}", fg="red", err=True)
 				raise typer.Exit(code=1)
@@ -216,10 +242,8 @@ def compute(
 		Mval = M_0n(overtone_order, mm.a, mm.λ, mu1, mu2)
 		typer.echo(f"Debug: Raw transition dipole M = {Mval:.25e} C·m")
 		
-		# Check if the value is extremely small due to formatting
-		if abs(Mval) < 1e-50:
-			typer.echo("Warning: Transition dipole is extremely small, may indicate numerical precision issue")
-		elif abs(Mval) == 0.0:
+		# Check if the value is exactly zero
+		if abs(Mval) == 0.0:
 			typer.echo("Warning: Transition dipole is exactly zero - check dipole derivatives and bond selection")
 			
 	except Exception as e:
@@ -229,12 +253,9 @@ def compute(
 	integrated = integrated_molar_absorptivity(Mval)
 	eps_max = epsilon_peak_from_integrated(integrated, fwhm)
 
-	# Ultra-aggressive scaling for overtones with ultra-high precision
-	# Apply exponential scaling based on overtone order
-	base_scaling = 10**30  # Base scaling to bring values to readable range
-	n = int(overtone_order) if overtone_order is not None else 1
-	overtone_scaling = 10**(10 * n) if n >= 2 else 1  # Exponential for overtones
-	total_scaling = base_scaling * overtone_scaling
+	# Scaling for overtones with ultra-high precision
+	# Apply scaling factor of e+64
+	total_scaling = 1e64
 	
 	typer.echo(f"\n=== ULTRA-HIGH PRECISION RESULTS ===")
 	typer.echo(f"Computed M_0-> {overtone_order}: {Mval:.25e} C·m")
@@ -244,9 +265,8 @@ def compute(
 		typer.echo(f"M × 10³⁰:                      {Mval*1e30:.25e}")
 		typer.echo(f"M × 10⁴⁰:                      {Mval*1e40:.25e}")
 		typer.echo(f"M × 10⁵⁰:                      {Mval*1e50:.25e}")
-		if n >= 3:
-			typer.echo(f"M × 10⁶⁰:                      {Mval*1e60:.25e}")
-			typer.echo(f"M × 10⁷⁰:                      {Mval*1e70:.25e}")
+		typer.echo(f"M × 10⁶⁰:                      {Mval*1e60:.25e}")
+		typer.echo(f"M × 10⁷⁰:                      {Mval*1e70:.25e}")
 	
 	typer.echo(f"\nIntegrated molar absorptivity: {integrated:.25e} cm M^-1")
 	if integrated > 0:
@@ -259,23 +279,13 @@ def compute(
 		typer.echo(f"ε_max × 10¹⁵:                  {eps_max*1e15:.25e}")
 		typer.echo(f"ε_max × 10³⁰:                  {eps_max*1e30:.25e}")
 		typer.echo(f"ε_max × 10⁴⁵:                  {eps_max*1e45:.25e}")
-		if n >= 3:
-			typer.echo(f"ε_max × 10⁶⁰:                  {eps_max*1e60:.25e}")
+		typer.echo(f"ε_max × 10⁶⁰:                  {eps_max*1e60:.25e}")
 	
-	# Ultra-aggressive scaled result
+	# Scaled result
 	scaled_eps = eps_max * total_scaling
-	typer.echo(f"\n=== AGGRESSIVELY SCALED ε_max ===")
+	typer.echo(f"\n=== SCALED ε_max ===")
 	typer.echo(f"Scaling factor: {total_scaling:.5e}")
 	typer.echo(f"Scaled ε_max: {scaled_eps:.25e} M^-1 cm^-1")
-	
-	# Physical interpretation for overtones
-	if n >= 3:
-		typer.echo(f"\n=== OVERTONE PHYSICS NOTE ===")
-		typer.echo(f"For the {n}th overtone:")
-		typer.echo(f"- Transition dipoles scale approximately as n^(-3/2) to n^(-5)")
-		typer.echo(f"- Values in range 10⁻⁴⁰ to 10⁻⁸⁰ C·m are physically reasonable")
-		typer.echo(f"- The scaled values above help visualization but may not reflect")
-		typer.echo(f"  actual experimental observability without enhancement")
 
 
 if __name__ == "__main__":

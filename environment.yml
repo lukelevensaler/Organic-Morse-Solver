@@ -49,7 +49,7 @@ dependencies:
   - readline=8.3=h0b18652_0
   - rich=13.9.4=py311hca03da5_0
   - scipy=1.16.2=py311h53ebd84_0
-  - setuptools<81
+  - setuptools<81 # Pinned to prevent deprecation 
   - shellingham=1.5.0=py311hca03da5_0
   - sqlite=3.50.2=h79febb2_1
   - tk=8.6.15=hcd8a7d5_0
