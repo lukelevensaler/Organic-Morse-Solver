@@ -1,8 +1,0 @@
-python3 run_morse_model.py compute 14.0067 1.00784 3360 12837 4 \
-  --coords "N 1.0805 1.0805 1.0805
-H 1.4011 0.5762 1.8844
-H 1.8844 1.4011 0.5762" \
-  --specified-spin 1 \
-  --bond "1,2" \
-  --delta 0.01 \
-  --fwhm 10

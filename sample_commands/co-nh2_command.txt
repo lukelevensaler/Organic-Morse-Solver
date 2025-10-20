@@ -1,0 +1,12 @@
+
+# CO-NH₂ (Amidated C-term, Primary Amide) - N-H stretch
+python3 run_morse_model.py compute 14.0067 1.00784 3270 10185 3 \
+  --coords "O 1.1280 0.2091 0.0000
+N -1.1878 0.1791 0.0000
+C 0.0598 -0.3882 0.0000
+H -1.3085 1.1864 0.0001
+H -2.0305 -0.3861 -0.0001" \
+  --specified-spin 0 \
+  --bond "2,4" \
+  --delta 0.01 \
+  --fwhm 10

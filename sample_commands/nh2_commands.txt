@@ -1,0 +1,9 @@
+# NH₂ (N-term, Amino Radical, Primary Amine) - N-H stretch
+python3 run_morse_model.py compute 14.0067 1.00784 3360 12837 4 \
+  --coords "N -1.1878 0.1791 0.0000
+H -1.3085 1.1864 0.0001
+H -2.0305 -0.3861 -0.0001" \
+  --specified-spin 1 \
+  --bond "1,2" \
+  --delta 0.01 \
+  --fwhm 10
