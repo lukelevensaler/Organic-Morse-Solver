@@ -50,8 +50,7 @@ def compute(
 	delta: Optional[float] = typer.Option(0.01, help="Finite-difference displacement magnitude in Å."),
 	bond: Optional[str] = typer.Option(None, help="Comma-separated bond indices 'n,x' to define bond vector for displacement."),
 	fwhm: Optional[float] = typer.Option(None, help="Assumed FWHM of the overtone band in cm^-1"),
-	disable_ccsd: bool = typer.Option(False, "--disable-ccsd", help="Use HF optimization instead of CCSD (faster, less accurate)"),
-	basis_set: str = typer.Option("aug-cc-pVDZ", "--basis", help="Basis set for quantum calculations (default: aug-cc-pVDZ)")) -> None:
+	basis_set: str = typer.Option("aug-cc-pVQZ", "--basis", help="Basis set for quantum calculations (default: aug-cc-pVQZ)")) -> None:
 	"""Interactive or positional compute.
 
 	If any of the positional arguments (amu_a, amu_b, fundamental_frequency,
@@ -99,24 +98,17 @@ def compute(
 				raise typer.BadParameter(f"Invalid bond indices: {e}")
 		# ensure delta is a float
 		delta_val = float(delta) if delta is not None else 0.01
-		# Choose optimization method based on user preference
-		if disable_ccsd:
-			typer.secho("Using HF optimization (--disable-ccsd flag set)", fg="yellow")
-			try:
-				from .derivatives_dipole_moment import optimize_geometry_hf
-				coords_to_use = optimize_geometry_hf(coords, specified_spin_int, basis=basis_set)
-			except Exception as e:
-				typer.secho(f"HF optimization failed: {e}", fg="red", err=True)
-				raise typer.Exit(code=2)
-		else:
-			# Attempt CCSD optimization with specified basis set
-			try:
-				coords_to_use = optimize_geometry_ccsd(coords, specified_spin_int, basis=basis_set)
-			except Exception as e:
-				typer.secho(f"CCSD optimization failed: {e}", fg="red", err=True)
-				typer.secho("Try using --disable-ccsd for faster HF optimization", fg="yellow")
-				typer.secho("Or use --basis=STO-3G for a smaller basis set", fg="yellow")
-				raise typer.Exit(code=2)
+		# Show theory level information
+		typer.secho("THEORY LEVEL: Using CCSD(T) for geometry optimization and dipole moment calculations", fg="green", bold=True)
+		typer.secho("This provides the highest accuracy", fg="green")
+		
+		# Use CCSD optimization
+		try:
+			coords_to_use = optimize_geometry_ccsd(coords, specified_spin_int, basis=basis_set)
+		except Exception as e:
+			typer.secho(f"CCSD optimization failed: {e}", fg="red", err=True)
+			typer.secho("Try using --basis=STO-3G for a smaller basis set", fg="yellow")
+			raise typer.Exit(code=2)
 		try:
 			mu1_val, mu2_val = compute_mu_derivatives(coords_to_use, specified_spin_int, delta=delta_val, bond_pair=bond_pair, basis=basis_set)
 		except Exception as e:
@@ -183,24 +175,13 @@ def compute(
 			specified_spin_int = int(specified_spin)
 			# ensure delta is a float (use the same local variable or default)
 			delta_val = float(delta) if delta is not None else 0.01
-			# Choose optimization method based on user preference
-			if disable_ccsd:
-				typer.secho("Using HF optimization (--disable-ccsd flag set)", fg="yellow")
-				try:
-					from .derivatives_dipole_moment import optimize_geometry_hf
-					coords_to_use = optimize_geometry_hf(coords, specified_spin_int, basis=basis_set)
-				except Exception as e:
-					typer.secho(f"HF optimization failed: {e}", fg="red", err=True)
-					raise typer.Exit(code=2)
-			else:
-				# attempt CCSD optimization (will raise and exit if it fails)
-				try:
-					coords_to_use = optimize_geometry_ccsd(coords, specified_spin_int, basis=basis_set)
-				except Exception as e:
-					typer.secho(f"CCSD optimization failed: {e}", fg="red", err=True)
-					typer.secho("Try using --disable-ccsd for faster HF optimization", fg="yellow")
-					typer.secho("Or use --basis=STO-3G for a smaller basis set", fg="yellow")
-					raise typer.Exit(code=2)
+			# Use CCSD optimization
+			try:
+				coords_to_use = optimize_geometry_ccsd(coords, specified_spin_int, basis=basis_set)
+			except Exception as e:
+				typer.secho(f"CCSD optimization failed: {e}", fg="red", err=True)
+				typer.secho("Try using --basis=STO-3G for a smaller basis set", fg="yellow")
+				raise typer.Exit(code=2)
 			# compute dipole derivatives
 			try:
 				mu1_val, mu2_val = compute_mu_derivatives(coords_to_use, specified_spin_int, delta=delta_val, bond_pair=bond_pair, basis=basis_set)
