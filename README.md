@@ -18,6 +18,138 @@
 
 ---
 
+# Part A: Optimizing Molecular Geometry
+
+This section describes the ab initio geometry optimization process using CCSD(T) level theory for maximum accuracy.
+
+## A.1 Initial Geometry Setup
+- Input: Cartesian coordinates in XYZ format (Element x y z) in Angstrom units
+- Parse atomic symbols and positions into molecular structure
+- Build PySCF molecule object with specified basis set (default: aug-cc-pVTZ)
+
+## A.2 High-Precision SCF Calculation
+Maximum precision SCF settings for CCSD(T) optimization:
+- Convergence tolerance: $1 \times 10^{-12}$ (extremely tight for CCSD(T) accuracy)
+- Maximum cycles: 400 (robust convergence)
+- DIIS space: 15 (large space for optimal convergence)
+
+## A.3 CCSD(T) Gradient-Based Optimization
+Uses analytic CCSD gradients with Berny solver for geometry optimization:
+
+### CCSD Setup (Maximum Rigor):
+- Convergence tolerance: $1 \times 10^{-12}$ (extremely tight)
+- Maximum cycles: 200 (robust convergence)  
+- DIIS space: 15 (maximum space)
+- Direct algorithm: enabled for numerical accuracy
+
+### CCSD(T) Triples Correction:
+**Mandatory** triples correction for maximum computational rigor:
+$$
+E_{\text{CCSD(T)}} = E_{\text{CCSD}} + E_{(T)}
+$$
+where $E_{(T)}$ is the perturbative triples correction.
+
+### Berny Geometry Optimization:
+- Maximum steps: 50 (user-configurable)
+- Uses analytic CCSD gradients for force evaluation
+- Convergence on energy and gradient thresholds
+
+**Output**: Optimized Cartesian coordinates at CCSD(T) level
+
+---
+
+# Part B: Getting a Dipole Derivative from the Optimized Molecular Geometry
+
+This section describes the finite-difference calculation of dipole moment derivatives using CCSD(T) dipole moments.
+
+## B.1 Coordinate Displacement Strategy
+
+### Single Bond Axis (Default):
+For bond pair $(i,j)$, create bond vector and normalize:
+$$
+\vec{u}_{ij} = \frac{\vec{r}_j - \vec{r}_i}{|\vec{r}_j - \vec{r}_i|}
+$$
+
+Displacement along bond axis:
+$$
+\vec{r}_i^{\pm} = \vec{r}_i \pm \frac{\delta}{2}\vec{u}_{ij}, \quad \vec{r}_j^{\pm} = \vec{r}_j \mp \frac{\delta}{2}\vec{u}_{ij}
+$$
+
+### Dual Bond Axes (Advanced):
+For two bonds sharing a common atom, e.g., $(n,x)$ and $(a,x)$:
+
+#### Step 1: Individual Bond Vectors
+$$
+\vec{e}_1 = \frac{\vec{r}_x - \vec{r}_n}{|\vec{r}_x - \vec{r}_n|}, \quad \vec{e}_2 = \frac{\vec{r}_x - \vec{r}_a}{|\vec{r}_x - \vec{r}_a|}
+$$
+
+#### Step 2: Symmetric/Antisymmetric Combinations
+$$
+\vec{e}_{\text{sym}} = \frac{\vec{e}_1 + \vec{e}_2}{\sqrt{2}}, \quad \vec{e}_{\text{anti}} = \frac{\vec{e}_1 - \vec{e}_2}{\sqrt{2}}
+$$
+
+#### Step 3: Mass Weighting
+Apply mass weighting using user-provided masses $m_1$ and $m_2$:
+$$
+\vec{e}_{\text{sym}}^{(i)} \leftarrow \frac{\vec{e}_{\text{sym}}^{(i)}}{\sqrt{m_i}}, \quad \vec{e}_{\text{anti}}^{(i)} \leftarrow \frac{\vec{e}_{\text{anti}}^{(i)}}{\sqrt{m_i}}
+$$
+
+#### Step 4: Renormalization
+$$
+\vec{e}_{\text{sym}} \leftarrow \frac{\vec{e}_{\text{sym}}}{|\vec{e}_{\text{sym}}|}, \quad \vec{e}_{\text{anti}} \leftarrow \frac{\vec{e}_{\text{anti}}}{|\vec{e}_{\text{anti}}|}
+$$
+
+**Primary displacement**: Use symmetric mode (larger projection typically).
+
+## B.2 CCSD(T) Dipole Moment Calculations
+
+### High-Precision Settings:
+- Basis set: aug-cc-pVTZ (or higher quality if specified)
+- SCF convergence: $1 \times 10^{-12}$ (extremely tight)
+- CCSD convergence: $1 \times 10^{-10}$ (very tight for derivatives)
+- Maximum cycles: 200 (robust convergence)
+
+### CCSD(T) Dipole Calculation Sequence:
+1. **SCF Calculation**: High-precision Hartree-Fock
+2. **CCSD Correlation**: Coupled-cluster singles and doubles
+3. **CCSD(T) Triples**: Perturbative triples correction (mandatory)
+4. **Dipole Moment**: Computed from CCSD density matrices
+
+### Dipole Moment Formula:
+$$
+\vec{\mu} = -\text{Tr}[\mathbf{D}^{\text{CCSD}} \cdot \hat{\vec{\mu}}] + \vec{\mu}_{\text{nuc}}
+$$
+where $\mathbf{D}^{\text{CCSD}}$ is the CCSD density matrix and $\vec{\mu}_{\text{nuc}}$ is the nuclear contribution.
+
+## B.3 Finite Difference Derivatives
+
+### Geometries Required:
+- Equilibrium: $\vec{\mu}_0$
+- Positive displacement: $\vec{\mu}_+$ (geometry displaced by $+\delta$)
+- Negative displacement: $\vec{\mu}_-$ (geometry displaced by $-\delta$)
+
+### First Derivative (Linear Term):
+$$
+\vec{\mu}'(0) = \frac{\vec{\mu}_+ - \vec{\mu}_-}{2\delta}
+$$
+
+### Second Derivative (Quadratic Term):
+$$
+\vec{\mu}''(0) = \frac{\vec{\mu}_+ - 2\vec{\mu}_0 + \vec{\mu}_-}{\delta^2}
+$$
+
+### Magnitude Conversion to SI Units:
+$$
+|\mu'(0)| = |\vec{\mu}'(0)| \times \frac{3.33564 \times 10^{-30}}{10^{-10}} \quad \text{[C·m/m]}
+$$
+$$
+|\mu''(0)| = |\vec{\mu}''(0)| \times \frac{3.33564 \times 10^{-30}}{10^{-20}} \quad \text{[C·m/m²]}
+$$
+
+**Output**: First and second dipole derivatives in SI units for Morse model input.
+
+# Part C: The Morse Model
+
 ## 1. Coordinate, reduced mass, and Morse potential
 
 - Mass-weighted stretch coordinate: denote the (mass-weighted) normal coordinate as $$\{Q}\$$ (units: m).
@@ -54,8 +186,9 @@ where
   - $$\{x_e}\$$ is the anharmonicity constant (dimensionless).
 
 - Relation between anharmonicity and Morse well depth:
-$${
-\tilde\nu_e x_e = \frac{\tilde\nu_e}^2{4 D_e} \qquad \text{with} D_e \text{in}{cm}^{-1}}$$
+$$
+\tilde\nu_e x_e = \frac{\tilde\nu_e^2}{4 D_e} \qquad \text{(with } D_e \text{ in cm}^{-1}\text{)}
+$$
 
 
 Equivalently:
@@ -315,13 +448,165 @@ $$\(
 \)$$
 - Plug in the computed integral from Step 2 and the user-specified FWHM.
 
+- Since IR overtones usually have extremely small molar exticntion coefficients in general, and NIR overtones have even smaller values, the results are scaled by a factor of $$\10^64\$$. This constant scalar multiple at the end of all calculations ensures that the results are scientifically usable, representing a **relative** molar absorptivity value.
+
 ---
 
-## 19. Remarks
-- This general framework allows **any bond type and overtone** to produce a theoretical ε_max.
-- The pure vibrational Morse model typically yields extremely small values for higher overtones (0→3, 0→4).
-- Enhancements can be included via:
-  1. Vibronic (electronic) coupling
-  2. Charge-transfer contributions
-  3. H-bond polarizability
-  4. Multi-oscillator collective effects
+## How To Use the CLI
+
+The Morse solver provides two usage modes: **batch mode** (all parameters at once) and **interactive mode** (step-by-step prompts).
+
+### Batch Mode (All Parameters at Once)
+
+Provide all required parameters in a single command for automated workflows:
+
+```bash
+python cli.py \
+  --m1 12.011 \
+  --m2 1.008 \
+  --fundamental 2900.0 \
+  --observed 8700.0 \
+  --overtone 3 \
+  --coords "C 0.0 0.0 0.0\nH 1.1 0.0 0.0" \
+  --spin 0 \
+  --atom-indices "0,1" \
+  --delta 0.005 \
+  --basis aug-cc-pVTZ \
+  --mu-prime 1.5e-29 \
+  --mu-double 5.0e-40 \
+  --fwhm 75.0
+```
+
+**Parameters:**
+- `--m1`, `--m2`: Atomic masses (amu) for elements A and B
+- `--fundamental`: Fundamental frequency (cm⁻¹)
+- `--observed`: Observed overtone frequency (cm⁻¹)
+- `--overtone`: Integer overtone number (n for 0→n transition)
+- `--coords`: Molecular geometry in XYZ format (quoted multiline string)
+- `--spin`: Spin multiplicity (0 for singlet, 1 for doublet, etc.)
+- `--atom-indices`: Bond atom indices as "i,j" (0-based)
+- `--delta`: Finite difference displacement (Angstrom, default: 0.005)
+- `--basis`: Quantum chemistry basis set (default: aug-cc-pVTZ)
+- `--mu-prime`: Linear dipole derivative (C·m/m, optional)
+- `--mu-double`: Quadratic dipole derivative (C·m/m², optional)
+- `--fwhm`: Line width for peak extinction (cm⁻¹, default: 75.0)
+
+### Interactive Mode (Step-by-Step)
+
+Run without parameters for guided input:
+
+```bash
+python cli.py
+```
+
+The CLI will prompt for each parameter:
+
+```
+🧮 Morse Solver for NIR Overtone Extinction Coefficients
+
+Enter atomic mass of element A (amu): 12.011
+Enter atomic mass of element B (amu): 1.008
+Enter fundamental frequency (cm⁻¹): 2900.0
+Enter observed frequency (cm⁻¹): 8700.0
+Enter overtone number (integer): 3
+
+📐 Molecular Geometry Input
+Choose input method:
+1. Type coordinates directly
+2. Load from file
+Selection: 1
+
+Enter molecular coordinates (Element x y z format, blank line to finish):
+C 0.0 0.0 0.0
+H 1.1 0.0 0.0
+[blank line]
+
+Enter spin multiplicity: 0
+Enter bond atom indices (i,j format): 0,1
+
+🔬 Advanced Options (press Enter for defaults)
+Finite difference step size (Å) [0.005]: 
+Basis set [aug-cc-pVTZ]: 
+```
+
+### Geometry Input Options
+
+#### Option 1: Direct coordinate input
+```bash
+# In interactive mode:
+Enter molecular coordinates (Element x y z format):
+C 0.000000 0.000000 0.000000
+H 1.100000 0.000000 0.000000
+O -1.200000 0.000000 0.000000
+H -1.800000 0.800000 0.000000
+[blank line to finish]
+```
+
+#### Option 2: File input
+```bash
+# Create coordinates file (e.g., molecule.xyz):
+cat > molecule.xyz << EOF
+C 0.000000 0.000000 0.000000
+H 1.100000 0.000000 0.000000
+O -1.200000 0.000000 0.000000
+H -1.800000 0.800000 0.000000
+EOF
+
+# Then use in batch mode:
+python cli.py --coords molecule.xyz [other parameters...]
+```
+
+### Advanced Usage Examples
+
+#### C-H Stretch in Methane:
+```bash
+python cli.py \
+  --m1 12.011 --m2 1.008 \
+  --fundamental 2917 --observed 8750 --overtone 3 \
+  --coords "C 0.0 0.0 0.0\nH 1.09 0.0 0.0\nH -0.36 1.03 0.0\nH -0.36 -0.51 0.89\nH -0.36 -0.51 -0.89" \
+  --spin 0 --atom-indices "0,1"
+```
+
+#### O-H Stretch in Water:
+```bash
+python cli.py \
+  --m1 15.999 --m2 1.008 \
+  --fundamental 3657 --observed 10935 --overtone 3 \
+  --coords "O 0.0 0.0 0.0\nH 0.757 0.587 0.0\nH -0.757 0.587 0.0" \
+  --spin 0 --atom-indices "0,1"
+```
+
+#### Dual Bond System (Advanced):
+For molecules with symmetric stretching modes:
+```bash
+python cli.py \
+  --dual-bonds "(0,2);(1,2)" \
+  --m1 12.011 --m2 15.999 \
+  [other parameters...]
+```
+
+### Output
+
+The CLI provides detailed output including:
+- CCSD(T) geometry optimization results
+- Computed dipole derivatives
+- Morse model parameters
+- Final molar extinction coefficient
+
+Example output:
+```
+🎯 Results Summary
+================
+Morse Parameters:
+  λ (lambda): 25.43
+  D_e: 4.52 eV
+  a: 2.14 × 10¹⁰ m⁻¹
+
+Transition Properties:
+  S₁ overlap: 1.23 × 10⁻⁶
+  S₂ overlap: 8.95 × 10⁻¹³
+  Transition dipole: 2.34 × 10⁻³² C·m
+
+Final Result:
+  Peak molar extinction: 1.24 × 10⁻⁴² M⁻¹cm⁻¹ (× 10⁶⁴ scaling factor)
+```

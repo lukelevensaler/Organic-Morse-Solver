@@ -1,0 +1,4 @@
+DO NOT delete the assets directory
+
+It may LOOK empty, but it is fileld used during GitHub CI actions
+to populate the README documentation with KaTeX/LaTeX equations
