@@ -48,7 +48,7 @@ def compute(
 	coords: Optional[str] = typer.Option(None, help="Cartesian coordinates (x,y,z) in Å for each atom's position in the chosen molecule's geometry. You must get such data from the CCDC Database (https://www.ccdc.cam.ac.uk/structures/), since that data is dierctly optimized to CCSD(T)-level quality."),
 	specified_spin: Optional[int] = typer.Option(None, help="Spin multiplicity. Required if coords provided."),
 	delta: Optional[float] = typer.Option(0.01, help="Finite-difference displacement magnitude in Å."),
-	bond: Optional[str] = typer.Option(None, help="Comma-separated bond indices 'n,x' to define bond vector for displacement."),
+	bond: Optional[str] = typer.Option(None, help="Bond indices: 'n,x' for single bond or '(n,x);(a,x)' for dual bond axes with mass weighting."),
 	fwhm: Optional[float] = typer.Option(None, help="Assumed FWHM of the overtone band in cm^-1"),
 	basis_set: str = typer.Option("aug-cc-pVQZ", "--basis", help="Basis set for quantum calculations (default: aug-cc-pVQZ)")) -> None:
 	"""Interactive or positional compute.
@@ -88,19 +88,26 @@ def compute(
 		assert specified_spin is not None
 		specified_spin_int = int(specified_spin)
 		# parse bond indices if provided (overrides interactive bond)
+		dual_bond_axes = None
 		if bond is not None:
 			try:
-				parts = [int(p.strip()) for p in bond.split(',')]
-				if len(parts) != 2:
-					raise ValueError("bond must be two comma-separated 1-based indices")
-				bond_pair = (parts[0] - 1, parts[1] - 1)  # convert to 0-based (i, j)
+				# Check if this is dual bond axes format: "(n,x);(a,x)"
+				if ';' in bond and '(' in bond and ')' in bond:
+					# Dual bond axes format
+					dual_bond_axes = bond  # Pass the string directly to compute_mu_derivatives
+					bond_pair = None  # Don't use single bond_pair for dual axes
+				else:
+					# Single bond pair format: "n,x"
+					parts = [int(p.strip()) for p in bond.split(',')]
+					if len(parts) != 2:
+						raise ValueError("bond must be two comma-separated 1-based indices or dual bond format '(n,x);(a,x)'")
+					bond_pair = (parts[0] - 1, parts[1] - 1)  # convert to 0-based (i, j)
 			except Exception as e:
 				raise typer.BadParameter(f"Invalid bond indices: {e}")
 		# ensure delta is a float
 		delta_val = float(delta) if delta is not None else 0.01
 		# Show theory level information
-		typer.secho("THEORY LEVEL: Using CCSD(T) for geometry optimization and dipole moment calculations", fg="green", bold=True)
-		typer.secho("This provides the highest accuracy", fg="green")
+		typer.secho("Beginning CCSD(T) for ab initio molecular geometry optimization and dipole derivative calculation.", fg="green", bold=True)
 		
 		# Use CCSD optimization
 		try:
@@ -110,7 +117,18 @@ def compute(
 			typer.secho("Try using --basis=STO-3G for a smaller basis set", fg="yellow")
 			raise typer.Exit(code=2)
 		try:
-			mu1_val, mu2_val = compute_mu_derivatives(coords_to_use, specified_spin_int, delta=delta_val, bond_pair=bond_pair, basis=basis_set)
+			# Pass the masses m1 and m2 that were converted from amu_a and amu_b
+			# Note: compute_mu_derivatives expects masses in amu, so use original amu_a, amu_b
+			mu1_val, mu2_val = compute_mu_derivatives(
+				coords_to_use, 
+				specified_spin_int, 
+				delta=delta_val, 
+				bond_pair=bond_pair, 
+				dual_bond_axes=dual_bond_axes,
+				m1=amu_a,  # Pass original amu values, not kg
+				m2=amu_b,
+				basis=basis_set
+			)
 		except Exception as e:
 			typer.secho(f"Error computing dipole derivatives from coordinates: {e}", fg="red", err=True)
 			raise typer.Exit(code=1)

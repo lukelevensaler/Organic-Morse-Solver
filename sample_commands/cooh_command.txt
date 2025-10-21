@@ -5,7 +5,7 @@ python3 run_morse_model.py compute 15.999 1.00784 3534 10000 3 \
 O 1.1146 0.2103 0.0000
 C 0.0538 -0.3927 0.0000
 H -1.1142 1.1620 0.0000" \
-  --specified-spin 0 \
+  --specified-spin 1 \
   --bond "1,4" \
   --delta 0.01 \
   --fwhm 10
