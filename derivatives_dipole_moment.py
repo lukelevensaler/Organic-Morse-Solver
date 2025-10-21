@@ -37,7 +37,9 @@ def dipole_for_geometry(atom_string: str, spin: int, basis: str = "aug-cc-pVTZ",
 
     This function uses full CCSD(T) method for accurate dipole moments, which is 
     essential for high-accuracy overtone transition dipole calculations.
-    
+
+    NOTE: Hartree refers to the atomic unit of energy, not the Hartree-Fock method, which we do not use.
+
     Parameters:
     -----------
     atom_string : str

@@ -1,4 +1,4 @@
-# These are some commands that allow you to find NIR overtone ε_max values for:
+# These are some commands that allow you to find IR (or NIR) overtone ε_max values for:
 
 * NH2
 * COOH

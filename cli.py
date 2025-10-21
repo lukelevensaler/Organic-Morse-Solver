@@ -28,7 +28,7 @@ def main_callback(ctx: typer.Context):
     Suggests running `stretches` to see allowed organic stretches.
     """
     if ctx.invoked_subcommand is None:
-        typer.echo("This CLI performs the following calulations to determine the molar extinction coefficent ε_(max) in M·cm^-1 for any organic molecule's NIR overtone.")
+        typer.echo("This CLI performs the following calulations to determine the molar extinction coefficent ε_(max) in M·cm^-1 for any organic molecule's IR (or NIR) overtone.")
         typer.echo("Run 'python morse_solver.py stretches' to see the allowed organic stretches.")
 
 @app.command("stretches", help="Print allowed organic stretches")
@@ -252,33 +252,19 @@ def compute(
 	integrated = integrated_molar_absorptivity(Mval)
 	eps_max = epsilon_peak_from_integrated(integrated, fwhm)
 
-	# Scaling for overtones with ultra-high precision
-	# Apply scaling factor of e+64
-	total_scaling = 1e64
+	# Prompt for scaling factor with helpful suggestions
+	typer.echo("\nScaling Factor Selection:")
+	typer.echo("  - NIR (Near-Infrared): Consider 35, 45, or up to 64 for short-wave NIR")
+	typer.echo("  - MIR (Mid-Infrared): Usually 1 is fine, sometimes up to 15 is necessary")
+	typer.secho("See references in the README documentation for more information.", fg="cyan")
+	typer.echo("  - Upper limit: 64")
+	scaling_exponent = typer.prompt("Enter scaling exponent (e.g., 1 for 1e1, 64 for 1e64)", type=int, default=1)
+	total_scaling = 10 ** scaling_exponent
 	
-	typer.echo(f"\n=== ULTRA-HIGH PRECISION RESULTS ===")
+	typer.echo(f"\n=== RESULTS ===")
 	typer.echo(f"Computed M_0-> {overtone_order}: {Mval:.25e} C·m")
-	
-	# Multiple scaling representations
-	if abs(Mval) > 0:
-		typer.echo(f"M × 10³⁰:                      {Mval*1e30:.25e}")
-		typer.echo(f"M × 10⁴⁰:                      {Mval*1e40:.25e}")
-		typer.echo(f"M × 10⁵⁰:                      {Mval*1e50:.25e}")
-		typer.echo(f"M × 10⁶⁰:                      {Mval*1e60:.25e}")
-		typer.echo(f"M × 10⁷⁰:                      {Mval*1e70:.25e}")
-	
-	typer.echo(f"\nIntegrated molar absorptivity: {integrated:.25e} cm M^-1")
-	if integrated > 0:
-		typer.echo(f"Integrated × 10¹⁵:            {integrated*1e15:.25e}")
-		typer.echo(f"Integrated × 10³⁰:            {integrated*1e30:.25e}")
-		typer.echo(f"Integrated × 10⁴⁵:            {integrated*1e45:.25e}")
-	
-	typer.echo(f"\nEstimated ε_max: {eps_max:.25e} M^-1 cm^-1")
-	if eps_max > 0:
-		typer.echo(f"ε_max × 10¹⁵:                  {eps_max*1e15:.25e}")
-		typer.echo(f"ε_max × 10³⁰:                  {eps_max*1e30:.25e}")
-		typer.echo(f"ε_max × 10⁴⁵:                  {eps_max*1e45:.25e}")
-		typer.echo(f"ε_max × 10⁶⁰:                  {eps_max*1e60:.25e}")
+	typer.echo(f"Integrated molar absorptivity: {integrated:.25e} cm M^-1")
+	typer.echo(f"Estimated ε_max: {eps_max:.25e} M^-1 cm^-1")
 	
 	# Scaled result
 	scaled_eps = eps_max * total_scaling

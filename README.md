@@ -1,4 +1,4 @@
-# This CLI performs the following calulations to determine the molar extinction coefficent ε in $$\{M·cm}^{-1}\$$ for any organic molecule's NIR overtone.
+# This CLI performs the following calulations to determine the molar extinction coefficent ε in $$\{M·cm}^{-1}\$$ for any organic molecule's IR (or NIR) overtone.
 
 ## Inputs required
 
@@ -196,7 +196,7 @@ $$
 - Maximum cycles: 200 (robust convergence)
 
 ### CCSD(T) Dipole Calculation Sequence:
-1. **SCF Calculation**: High-precision Hartree-Fock
+1. **SCF Calculation**: High-precision self-consistent field
 2. **CCSD Correlation**: Coupled-cluster singles and doubles
 3. **CCSD(T) Triples**: Perturbative triples correction (mandatory)
 4. **Dipole Moment**: Computed from CCSD density matrices
@@ -549,7 +549,7 @@ M_{0\to n} = \mu'(0) S_1 + \frac12 \mu''(0) S_2
 ---
 
 ## 17. Integrated Molar Absorptivity
-Use the general formula for NIR vibrational transitions:
+Use the general formula for IR (or NIR) vibrational transitions:
 $$\(
 \int \varepsilon(\tilde\nu) d\tilde\nu = 4.319\times10^{-9} |M_{0\to n}|^2 \quad [\mathrm{cm\,M^{-1}}]
 \)$$
@@ -615,7 +615,7 @@ python cli.py
 The CLI will prompt for each parameter:
 
 ```
-Morse Solver for NIR Overtone Extinction Coefficients
+Morse Solver for IR (or NIR) Overtone Extinction Coefficients
 
 Enter atomic mass of element A (amu): 12.011
 Enter atomic mass of element B (amu): 1.008
@@ -721,6 +721,8 @@ python cli.py \
   --m1 12.011 --m2 15.999 \
   [other parameters...]
 ```
+
+## NOTE: ALL of the above examples are just arbitrary numbers, not actual valid data, including the hypothetical methane example. DO NOT USE THOSE DEMONSTRATION NUMBERS IN ACTUAL SCIENTIFIC RESEARCH!
 
 ### Output
 
