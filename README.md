@@ -47,7 +47,7 @@ where
 
 - Morse-level energy (wavenumbers, $$\tilde\nu\$$ in $$\{cm}^{-1}\$$):
 $$\{
-\tilde E_v \;=\; \tilde\nu_e\bigl(v+\tfrac12\bigr) \, - \, \tilde\nu_e x_e\bigl(v+\tfrac12\bigr)^2}
+\tilde E_v \=\ \tilde\nu_e\bigl(v+\tfrac12\bigr) \ - \ \tilde\nu_e x_e\bigl(v+\tfrac12\bigr)^2}
 \$$
 where
   - $$\tilde\nu_e\$$ is the fundamental ($$\{cm}^{-1}\$$),
@@ -55,7 +55,7 @@ where
 
 - Relation between anharmonicity and Morse well depth:
 $$
-\tilde\nu_e x_e \;=\; \frac{\tilde\nu_e^2}{4 D_e}\qquad\text{(with }D_e\text{ in cm}^{-1}\text{ units)}
+\tilde\nu_e x_e \=\ \frac{\tilde\nu_e^2}{4 D_e}\qquad\text{with}D_e\text{in cm}^{-1}\text{units}
 $$
 Equivalently:
 $$\(
