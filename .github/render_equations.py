@@ -11,9 +11,17 @@ ASSETS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), 'assets'))
 with open(README, "r", encoding="utf-8") as f:
     text = f.read()
 
-# Find all LaTeX math blocks delimited by $$
+# Find all LaTeX math blocks delimited by $$ but exclude those with \( \[ \) \] delimiters
 pattern = re.compile(r"\$\$(.+?)\$\$", re.DOTALL)
-matches = pattern.findall(text)
+all_matches = pattern.findall(text)
+
+# Filter out matches that contain \( \[ \) \] delimiters
+matches = []
+for match in all_matches:
+    stripped = match.strip()
+    if not (stripped.startswith(r'\(') or stripped.startswith(r'\[') or 
+            stripped.endswith(r'\)') or stripped.endswith(r'\]')):
+        matches.append(match)
 
 for eq in matches:
     eq_stripped = eq.strip()
