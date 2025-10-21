@@ -38,7 +38,7 @@ V(Q) \=\ D_e\bigl(1 - e^{-aQ}\bigr)^2
 where
 
   - $$\(D_e\)$$ is the dissociation energy (J),
-  - $$\(a\)$$ is the Morse inverse length parameter ($$\{m}^{-1}\$$).
+  - $$\(a\)$$ is the Morse inverse length parameter $$\{m}^{-1}\$$.
 
 
 ---
@@ -50,7 +50,7 @@ $$\(
 \tilde E_v \;=\; \tilde\nu_e\bigl(v+\tfrac12\bigr) \, - \, \tilde\nu_e x_e\bigl(v+\tfrac12\bigr)^2
 \)$$
 where
-  - $$\(\tilde\nu_e\)$$ is the fundamental (cm$$\(^{-1}\)$$),
+  - $$\tilde\nu_e\$$ is the fundamental (cm$$\(^{-1}\)$$),
   - $$\(x_e\)$$ is the anharmonicity constant (dimensionless).
 
 - Relation between anharmonicity and Morse well depth:
