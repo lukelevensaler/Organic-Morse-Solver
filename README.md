@@ -148,6 +148,37 @@ $$
 
 **Output**: First and second dipole derivatives in SI units for Morse model input.
 
+---
+
+# High-Precision Arithmetic Note
+
+The Morse overtone calculations involve extreme numerical challenges due to the alternating series nature of the overlap integrals. Individual terms in the sum can reach magnitudes as large as $e^{74691} \approx 10^{32000}$, but the alternating series produces final results in the range $10^{-50}$ to $10^{-200}$ C·m.
+
+**Key Numerical Challenges:**
+- **Catastrophic Cancellation**: Large positive and negative terms nearly cancel
+- **Overflow Risk**: Individual terms exceed standard floating-point limits
+- **Precision Loss**: Standard double precision (16 digits) is insufficient
+
+**High-Precision Solution:**
+The solver uses Python's `decimal` module with **1,000 decimal places of precision** to:
+1. Compute each term using logarithmic arithmetic: $\ln|I_m| + \ln|c_m| - \ln(m!)$
+2. Convert to high-precision `Decimal` objects before exponentiation
+3. Apply alternating signs and sum with full precision
+4. Handle Gamma, digamma, and trigamma functions for large arguments using asymptotic expansions
+
+**Example Numerical Scale:**
+```
+Term 0: magnitude ≈ 10^32000
+Term 1: magnitude ≈ -10^32000  
+Term 2: magnitude ≈ 10^31995
+...
+Final Sum: ≈ 10^-85 C·m (after cancellation)
+```
+
+This technique enables accurate calculation of transition dipole moments for high overtones that would be impossible with standard numerical methods.
+
+---
+
 # Part C: The Morse Model
 
 ## 1. Coordinate, reduced mass, and Morse potential
@@ -486,7 +517,7 @@ python cli.py \
 - `--spin`: Spin multiplicity (0 for singlet, 1 for doublet, etc.)
 - `--atom-indices`: Bond atom indices as "i,j" (0-based)
 - `--delta`: Finite difference displacement (Angstrom, default: 0.005)
-- `--basis`: Quantum chemistry basis set (default: aug-cc-pVTZ)
+- `--basis`: Quantum chemistry basis set (default: aug-cc-pVTZ). Can be overridden with higher quality sets like aug-cc-pVQZ for maximum accuracy, or smaller sets like STO-3G for faster computation
 - `--mu-prime`: Linear dipole derivative (C·m/m, optional)
 - `--mu-double`: Quadratic dipole derivative (C·m/m², optional)
 - `--fwhm`: Line width for peak extinction (cm⁻¹, default: 75.0)
@@ -502,7 +533,7 @@ python cli.py
 The CLI will prompt for each parameter:
 
 ```
-🧮 Morse Solver for NIR Overtone Extinction Coefficients
+Morse Solver for NIR Overtone Extinction Coefficients
 
 Enter atomic mass of element A (amu): 12.011
 Enter atomic mass of element B (amu): 1.008
@@ -526,7 +557,7 @@ Enter bond atom indices (i,j format): 0,1
 
 🔬 Advanced Options (press Enter for defaults)
 Finite difference step size (Å) [0.005]: 
-Basis set [aug-cc-pVTZ]: 
+Basis set [aug-cc-pVTZ]: aug-cc-pVQZ
 ```
 
 ### Geometry Input Options
@@ -554,6 +585,30 @@ EOF
 
 # Then use in batch mode:
 python cli.py --coords molecule.xyz [other parameters...]
+```
+
+### Basis Set Selection
+
+The `--basis` flag allows you to control the quantum chemistry basis set used for CCSD(T) calculations:
+
+**Default (Recommended):** `aug-cc-pVTZ`
+- High accuracy for most organic molecules
+- Good balance of precision and computational cost
+- Suitable for production calculations
+
+**Higher Accuracy:** `aug-cc-pVQZ` 
+- Maximum precision for critical applications
+- Significantly longer computation time
+- Recommended for benchmarking or when highest accuracy is needed
+
+**Faster Computation:** `STO-3G` or `cc-pVDZ`
+- Reduced accuracy but much faster
+- Useful for testing, debugging, or large systems
+- Not recommended for final results
+
+**Example with custom basis set:**
+```bash
+python cli.py --basis aug-cc-pVQZ [other parameters...]
 ```
 
 ### Advanced Usage Examples
@@ -595,7 +650,7 @@ The CLI provides detailed output including:
 
 Example output:
 ```
-🎯 Results Summary
+Results Summary
 ================
 Morse Parameters:
   λ (lambda): 25.43

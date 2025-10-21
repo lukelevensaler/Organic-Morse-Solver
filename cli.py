@@ -50,7 +50,7 @@ def compute(
 	delta: Optional[float] = typer.Option(0.01, help="Finite-difference displacement magnitude in Å."),
 	bond: Optional[str] = typer.Option(None, help="Bond indices: 'n,x' for single bond or '(n,x);(a,x)' for dual bond axes with mass weighting."),
 	fwhm: Optional[float] = typer.Option(None, help="Assumed FWHM of the overtone band in cm^-1"),
-	basis_set: str = typer.Option("aug-cc-pVQZ", "--basis", help="Basis set for quantum calculations (default: aug-cc-pVQZ)")) -> None:
+	basis_set: str = typer.Option("aug-cc-pVTZ", "--basis", help="Basis set for quantum calculations (default: aug-cc-pVTZ)")) -> None:
 	"""Interactive or positional compute.
 
 	If any of the positional arguments (amu_a, amu_b, fundamental_frequency,
