@@ -4,8 +4,8 @@
 
 * Molar mass (amu) of element A in an A-B stretch
 * Molar mass (amu) of element B in an A-B stretch
-* Fundamental frequency of molecule in cm$$\(^{-1}\)$$ (wavenumber)
-* Observed frequency of molecule in cm$$\(^{-1}\)$$ in
+* Fundamental frequency of molecule in $$\{cm}^{-1}\$$ (wavenumber)
+* Observed frequency of molecule in $$\{cm}^{-1}\$$ in
 * Approximate integer overtone order of the molecule's observed wavenumber relative to the fundamental wavenumber
 
 ## Allowed organic stretches:
