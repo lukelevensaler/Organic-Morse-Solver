@@ -1,4 +1,4 @@
-# This CLI performs the following calulations to determine the molar extinction coefficent ε $$\(_{max}\)$$ in M·cm$$\(^{-1}\)$$ for any organic molecule's NIR overtone.
+# This CLI performs the following calulations to determine the molar extinction coefficent ε in $$\({M·cm}^{-1}\)$$ for any organic molecule's NIR overtone.
 
 ## Inputs required
 
@@ -20,7 +20,7 @@
 
 ## 1. Coordinate, reduced mass, and Morse potential
 
-- Mass-weighted stretch coordinate: denote the (mass-weighted) normal coordinate as $$$$\(Q\)$$$$ (units: m).
+- Mass-weighted stretch coordinate: denote the (mass-weighted) normal coordinate as $$\(Q\)$$ (units: m).
 - Reduced mass for an A-B bond (e.g. N–H):
 
 
@@ -63,9 +63,9 @@ D_e \;=\; \frac{\tilde\nu_e}{4 x_e}.
 \)$$
 
 - Conversion from $$\(D_e\)$$ in cm$$\(^{-1}\)$$ to joules:
-$$\
+$$\(
 D_e(\mathrm{J}) \;=\; D_e(\mathrm{cm^{-1}}) \times h c
-\$$
+\)$$
 with $$\(h c = 1.98644586\times10^{-23}\ \mathrm{J\cdot cm}\)$$.
 
 - Harmonic angular frequency (rad s$$\(^{-1}\)$$):
