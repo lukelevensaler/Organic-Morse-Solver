@@ -54,8 +54,8 @@ where
   - $$\{x_e}\$$ is the anharmonicity constant (dimensionless).
 
 - Relation between anharmonicity and Morse well depth:
-$$
-\tilde\nu_e x_e \=\ \frac{\tilde\nu_e^2}{4 D_e}\qquad\text{with}D_e\text{in cm}^{-1}\text{units}
+$${
+\tilde\nu_e x_e \=\ \frac{\tilde\nu_e^2}{4 D_e}\qquad\text{with}D_e\text{in cm}^{-1}\text{units}}
 $$
 Equivalently:
 $$\(
