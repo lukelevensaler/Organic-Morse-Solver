@@ -1,4 +1,4 @@
-# This CLI performs the following calulations to determine the molar extinction coefficent ε in $$\({M·cm}^{-1}\)$$ for any organic molecule's NIR overtone.
+# This CLI performs the following calulations to determine the molar extinction coefficent ε in $$\{M·cm}^{-1}\$$ for any organic molecule's NIR overtone.
 
 ## Inputs required
 
