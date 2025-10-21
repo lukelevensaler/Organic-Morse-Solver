@@ -46,12 +46,12 @@ where
 ## 2. Spectroscopic (vibrational) energy levels and relations
 
 - Morse-level energy (wavenumbers, $$\tilde\nu\$$ in $$\{cm}^{-1}\$$):
-$$\
-\tilde E_v \;=\; \tilde\nu_e\bigl(v+\tfrac12\bigr) \, - \, \tilde\nu_e x_e\bigl(v+\tfrac12\bigr)^2
+$$\{
+\tilde E_v \;=\; \tilde\nu_e\bigl(v+\tfrac12\bigr) \, - \, \tilde\nu_e x_e\bigl(v+\tfrac12\bigr)^2}
 \$$
 where
   - $$\tilde\nu_e\$$ is the fundamental ($$\{cm}^{-1}\$$),
-  - $$\x_e\$$ is the anharmonicity constant (dimensionless).
+  - $$\{x_e}\$$ is the anharmonicity constant (dimensionless).
 
 - Relation between anharmonicity and Morse well depth:
 $$
