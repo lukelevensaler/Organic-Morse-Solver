@@ -45,12 +45,12 @@ where
 
 ## 2. Spectroscopic (vibrational) energy levels and relations
 
-- Morse-level energy (wavenumbers, $$\tilde\nu\$$ in cm$$\(^{-1}\)$$):
+- Morse-level energy (wavenumbers, $$\tilde\nu\$$ in $$\{cm}^{-1}\$$):
 $$\(
 \tilde E_v \;=\; \tilde\nu_e\bigl(v+\tfrac12\bigr) \, - \, \tilde\nu_e x_e\bigl(v+\tfrac12\bigr)^2
 \)$$
 where
-  - $$\tilde\nu_e\$$ is the fundamental (cm$$\(^{-1}\)$$),
+  - $$\tilde\nu_e\$$ is the fundamental ($$\{cm}^{-1}\$$),
   - $$\(x_e\)$$ is the anharmonicity constant (dimensionless).
 
 - Relation between anharmonicity and Morse well depth:
@@ -62,7 +62,7 @@ $$\(
 D_e \;=\; \frac{\tilde\nu_e}{4 x_e}.
 \)$$
 
-- Conversion from $$\(D_e\)$$ in cm$$\(^{-1}\)$$ to joules:
+- Conversion from $$\(D_e\)$$ in $$\{cm}^{-1}\$$ to joules:
 $$\(
 D_e(\mathrm{J}) \;=\; D_e(\mathrm{cm^{-1}}) \times h c
 \)$$
@@ -72,7 +72,7 @@ with $$\(h c = 1.98644586\times10^{-23}\ \mathrm{J\cdot cm}\)$$.
 $$\(
 \omega_e \;=\; 2\pi c\,\tilde\nu_e
 \)$$
-with $$\(c\)$$ in cm s$$\(^{-1}\)$$ when $$\(\tilde\nu_e\)$$ is in cm$$\(^{-1}\)$$.
+with $$\(c\)$$ in cm s$$\(^{-1}\)$$ when $$\(\tilde\nu_e\)$$ is in $$\{cm}^{-1}\$$.
 
 - Relation to Morse parameter $$\(a\)$$ (SI):
 $$\(
@@ -170,7 +170,7 @@ Therefore each overlap becomes a finite sum of terms like $$\(\Gamma(\beta)\)$$,
 $$\(
 \boxed{\;\int \varepsilon(\tilde\nu)\,d\tilde\nu \;=\; 4.319\times10^{-9}\;|M_{i\to f}|^2\;}
 \)$$
-(valid when $$\(\tilde\nu\)$$ is in cm$$\(^{-1}\)$$ and $$\(M\)$$ in C·m).
+(valid when $$\(\tilde\nu\)$$ is in $$\{cm}^{-1}\$$ and $$\(M\)$$ in C·m).
 
 - For a Gaussian lineshape with FWHM $$\(\Delta\tilde\nu\)$$, the peak molar extinction is
 $$\(
