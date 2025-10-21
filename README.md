@@ -25,15 +25,15 @@
 
 
 $$\
-\mu \;=\; \frac{m_A m_B}{m_A + m_B}
+\mu \=\ \frac{m_A m_B}{m_A + m_B}
 \$$
 
 
 - Morse potential (measured from equilibrium at \(Q=0\)$$):
 
-$$\(
+$$\
 V(Q) \;=\; D_e\bigl(1 - e^{-aQ}\bigr)^2
-\)$$
+\$$
 
 where
 
