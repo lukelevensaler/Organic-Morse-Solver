@@ -55,12 +55,13 @@ where
 
 - Relation between anharmonicity and Morse well depth:
 $${
-\tilde\nu_e x_e \=\ \frac{\tilde\nu_e^2}{4 D_e}\qquad\text{with}D_e\text{in cm}^{-1}\text{units}}
+\tilde\nu_e x_e \=\ \frac{\tilde\nu_e^2}{4 D_e}\qquad\}
+ * with $$\D_e{in cm}^{-1}\$$
 $$
 Equivalently:
-$$\(
-D_e \;=\; \frac{\tilde\nu_e}{4 x_e}.
-\)$$
+$$\{
+D_e \=\ \frac{\tilde\nu_e}{4 x_e}.
+}\$$
 
 - Conversion from $$\(D_e\)$$ in $$\{cm}^{-1}\$$ to joules:
 $$\(
