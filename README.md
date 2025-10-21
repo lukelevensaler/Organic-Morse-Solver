@@ -45,7 +45,7 @@ where
 
 ## 2. Spectroscopic (vibrational) energy levels and relations
 
-- Morse-level energy (wavenumbers, $$\(\tilde\nu\)$$ in cm$$\(^{-1}\)$$):
+- Morse-level energy (wavenumbers, $$\tilde\nu\$$ in cm$$\(^{-1}\)$$):
 $$\(
 \tilde E_v \;=\; \tilde\nu_e\bigl(v+\tfrac12\bigr) \, - \, \tilde\nu_e x_e\bigl(v+\tfrac12\bigr)^2
 \)$$
