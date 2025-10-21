@@ -63,9 +63,9 @@ D_e \;=\; \frac{\tilde\nu_e}{4 x_e}.
 \)$$
 
 - Conversion from $$\(D_e\)$$ in cm$$\(^{-1}\)$$ to joules:
-$$\(
+$$\
 D_e(\mathrm{J}) \;=\; D_e(\mathrm{cm^{-1}}) \times h c
-\)$$
+\$$
 with $$\(h c = 1.98644586\times10^{-23}\ \mathrm{J\cdot cm}\)$$.
 
 - Harmonic angular frequency (rad s$$\(^{-1}\)$$):
