@@ -16,6 +16,92 @@
 * N–H 
 * O–H
 
+## Installation
+
+### Prerequisites
+
+- **Conda** or **Miniconda**: Required for environment management
+  - Download from [Anaconda](https://www.anaconda.com/download) or [Miniconda](https://docs.conda.io/en/latest/miniconda.html)
+- **Git**: Required for cloning the repository
+
+### Step-by-Step Installation
+
+1. **Clone the Repository**
+   ```bash
+   git clone https://github.com/lukelevensaler/Organic-Morse-Solver.git
+   cd Organic-Morse-Solver
+   ```
+
+2. **Create the Conda Environment**
+   
+   The repository includes an `environment.yml` file that specifies all required dependencies including:
+   - **PySCF**: Quantum chemistry calculations (CCSD(T) level theory)
+   - **NumPy/SciPy**: Numerical computations and special functions
+   - **Typer**: Command-line interface framework
+   - **PyBerny**: Geometry optimization
+   - **H5PY**: Data storage for quantum chemistry results
+
+   Create the environment named `morse_solver`:
+   ```bash
+   conda env create -f environment.yml
+   ```
+
+3. **Activate the Environment**
+   ```bash
+   conda activate morse_solver
+   ```
+
+4. **Verify Installation**
+   
+   Test that the CLI works correctly:
+   ```bash
+   python run_morse_model.py stretches
+   ```
+   
+   You should see the list of allowed organic stretches:
+   ```
+   Allowed organic stretches:
+    - C–H
+    - C=O
+    - C–N
+    - N–H
+    - O–H
+   ```
+
+### Environment Details
+
+The `morse_solver` conda environment includes:
+- **Python 3.11**: Modern Python with excellent performance
+- **PySCF 2.10.0**: State-of-the-art quantum chemistry package for CCSD(T) calculations
+- **Scientific Computing Stack**: NumPy 2.0.1, SciPy 1.16.2 for high-performance numerical work
+- **High-Precision Libraries**: Optimized BLAS/LAPACK for numerical stability
+- **Parallel Computing**: MPI support for distributed quantum chemistry calculations
+
+### Usage After Installation
+
+Once installed, you can run the solver from the repository directory:
+
+```bash
+# Activate the environment (if not already active)
+conda activate morse_solver
+
+# Run the CLI
+python run_morse_model.py compute --help
+```
+
+### Troubleshooting
+
+**Common Issues:**
+
+1. **Conda environment creation fails**: Ensure you have sufficient disk space (~2GB) and internet connectivity
+2. **PySCF import errors**: The environment includes all required quantum chemistry dependencies
+3. **Permission errors**: Ensure you have write access to your conda installation directory
+
+**Platform Notes:**
+- Tested on **macOS** (Apple Silicon and Intel)
+- **Linux** support through conda-forge packages
+- **Windows** support via conda environments (some packages may require Windows-specific builds)
+
 ---
 
 # Part A: Optimizing Molecular Geometry
@@ -503,8 +589,6 @@ python cli.py \
   --atom-indices "0,1" \
   --delta 0.005 \
   --basis aug-cc-pVTZ \
-  --mu-prime 1.5e-29 \
-  --mu-double 5.0e-40 \
   --fwhm 75.0
 ```
 
@@ -518,8 +602,6 @@ python cli.py \
 - `--atom-indices`: Bond atom indices as "i,j" (0-based)
 - `--delta`: Finite difference displacement (Angstrom, default: 0.005)
 - `--basis`: Quantum chemistry basis set (default: aug-cc-pVTZ). Can be overridden with higher quality sets like aug-cc-pVQZ for maximum accuracy, or smaller sets like STO-3G for faster computation
-- `--mu-prime`: Linear dipole derivative (C·m/m, optional)
-- `--mu-double`: Quadratic dipole derivative (C·m/m², optional)
 - `--fwhm`: Line width for peak extinction (cm⁻¹, default: 75.0)
 
 ### Interactive Mode (Step-by-Step)
