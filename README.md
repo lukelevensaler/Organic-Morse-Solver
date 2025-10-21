@@ -5,7 +5,7 @@
 * Molar mass (amu) of element A in an A-B stretch
 * Molar mass (amu) of element B in an A-B stretch
 * Fundamental frequency of molecule in $$\{cm}^{-1}\$$ (wavenumber)
-* Observed frequency of molecule in $$\{cm}^{-1}\$$ in
+* Observed frequency of molecule in $$\{cm}^{-1}\$$ (wavenumber)
 * Approximate integer overtone order of the molecule's observed wavenumber relative to the fundamental wavenumber
 
 ## Allowed organic stretches:
@@ -20,13 +20,13 @@
 
 ## 1. Coordinate, reduced mass, and Morse potential
 
-- Mass-weighted stretch coordinate: denote the (mass-weighted) normal coordinate as $$\(Q\)$$ (units: m).
+- Mass-weighted stretch coordinate: denote the (mass-weighted) normal coordinate as $$\{Q}\$$ (units: m).
 - Reduced mass for an A-B bond (e.g. N–H):
 
 
-$$\(
+$$\
 \mu \;=\; \frac{m_A m_B}{m_A + m_B}
-\)$$
+\$$
 
 
 - Morse potential (measured from equilibrium at \(Q=0\)$$):
