@@ -5,27 +5,19 @@ warnings.filterwarnings("ignore", message="pkg_resources is deprecated", categor
 from pyscf import gto, scf
 import numpy as np
 import os
-from typing import Any
-try:
-	# geomopt Berny solver for correlated gradients
-	from pyscf.geomopt import berny_solver
-except Exception:
-	berny_solver = None
-
 # lazily import CC and grad inside functions to avoid static analysis issues
 cc = None
 grad = None
-import time
 from tqdm import tqdm
-from pyscf_monkeypatch import patch_pyscf_ccsd_gradient_bug
 from normalize_bonds import process_bond_displacements
+from optimize_geometry import optimize_geometry_ccsd
 
 # ===== MAXIMUM PRECISION DIPOLE DERIVATIVE SOLVING WITH CCSD(T) =======
 #
 # This module implements the most computationally rigorous approach possible:
-# - All dipole moments computed at full CCSD(T) level
-# - Extremely tight SCF convergence (1e-12) for optimal CCSD(T) starting point
-# - High-precision CCSD convergence (1e-9 to 1e-10) 
+# - Dipole moment computed at full CCSD(T) level
+# - Extremely tight SCF convergence (1e-12) used for required CCSD prerequisite
+# - High-precision CCSD convergence (1e-9 to 1e-10) used for required CCSD(T) prerequisite
 # - Mandatory CCSD(T) triples correction for all calculations
 # - High-quality correlation-consistent basis sets (aug-cc-pVTZ default)
 # - Optimized DIIS spaces and maximum iteration counts
@@ -34,270 +26,8 @@ from normalize_bonds import process_bond_displacements
 # This ensures maximum computational rigor for overtone spectroscopy applications
 # where dipole derivative accuracy is critical.
 
-# First we optimize the provided geometry 
-# Bond axis-related computations are outsourced to normalize_bonds.py
-def optimize_geometry_ccsd(coords_string: str, specified_spin: int, basis: str = "aug-cc-pVTZ", maxsteps: int = 50) -> str:
-	"""
-	Run a CCSD geometry optimization (via CCSD gradients + Berny).
-
-	coords_string: either a path to a file or a multiline XYZ-style string (Element x y z)
-	specified_spin: spin multiplicity value
-	basis: basis set name (default: aug-cc-pVTZ for maximum CCSD(T) accuracy)
-	maxsteps: maximum Berny steps
-
-	Returns an XYZ-style block string with optimized coordinates (same format as input).
-	
-	Uses maximum precision CCSD(T) gradients for the most rigorous geometry optimization.
-	"""
-	# read coords
-	if os.path.isfile(coords_string):
-		with open(coords_string, 'r') as fh:
-			coord_text = fh.read()
-	else:
-		coord_text = coords_string
-
-	# parse as in compute_µ_derivatives
-	lines = [ln.strip() for ln in coord_text.splitlines() if ln.strip()]
-	atoms = []
-	positions = []
-	for ln in lines:
-		parts = ln.split()
-		if len(parts) != 4:
-			raise ValueError(f"Invalid coordinate line: '{ln}'. Expected 'Element x y z'.")
-		atoms.append(parts[0])
-		positions.append([float(parts[1]), float(parts[2]), float(parts[3])])
-	positions = np.array(positions, dtype=float)
-
-	# build molecule
-	mol = gto.M(atom="\n".join(f"{a} {x} {y} {z}" for a, (x, y, z) in zip(atoms, positions)), basis=basis, spin=specified_spin, unit='Angstrom')
-
-	# run initial mean-field with maximum precision for CCSD(T)
-	if specified_spin == 0:
-		mf = scf.RHF(mol)
-	else:
-		mf = scf.UHF(mol)
-	
-	# Use maximum precision SCF settings for CCSD(T) optimization
-	mf.conv_tol = 1e-12   # Extremely tight convergence
-	mf.max_cycle = 400    # Many cycles for robust convergence
-	mf.diis_space = 15    # Large DIIS space
-	
-	# Start progress tracking for SCF optimization
-	with tqdm(desc="🔬 SCF for Geometry Optimization", unit="step", colour='blue') as pbar:
-		pbar.set_postfix(tol=f"{mf.conv_tol:.0e}", max_cycle=mf.max_cycle)
-		mf.run()
-		pbar.update(1)
-		pbar.set_postfix(converged=mf.converged, energy=f"{mf.e_tot:.6f}")
-	
-	if not mf.converged:
-		raise RuntimeError("High-precision SCF did not converge - cannot proceed with CCSD(T) optimization")
-
-	# lazily import cc and grad to check for analytic gradient support
-	try:
-		from pyscf import cc as _cc, grad as _grad
-	except Exception:
-		_cc = None
-		_grad = None
-
-	# Require CCSD gradients + berny_solver to be available; otherwise fail loudly
-	missing = []
-	if berny_solver is None:
-		missing.append('berny_solver (geometry optimizer)')
-	if _cc is None:
-		missing.append('pyscf.cc (CCSD module)')
-	if _grad is None:
-		missing.append('pyscf.grad (analytic gradients)')
-	if missing:
-		msg = (
-			"CCSD gradients and/or berny_solver are not available in this PySCF installation; cannot perform CCSD geometry optimization.\n"
-			"Missing: " + ", ".join(missing) + ".\n"
-			"Recommended fixes:\n"
-			" - Install PySCF and berny from conda-forge (recommended):\n"
-			"     conda create -n pyscf-env -c conda-forge python=3.11 pyscf berny scipy -y\n"
-			" - Or install via pip and build from source if wheel lacks compiled extensions:\n"
-			"     python -m pip install pyscf berny\n"
-			"   If pip wheel lacks CCSD gradient code, build PySCF from source (see INSTALL_PySCF.md in project root).\n"
-			"After installing, re-run the script in the same Python environment.\n"
-		)
-		raise RuntimeError(msg)
-
-	# Run CCSD optimization and raise if it fails
-	try:
-		# ensure static analysers know these are present
-		assert _cc is not None, 'pyscf.cc not available'
-		assert _grad is not None, 'pyscf.grad not available'
-		# use the lazily imported cc with maximum rigor convergence controls
-		mycc = _cc.CCSD(mf)
-		
-		# Set maximum precision convergence criteria for ultimate CCSD(T) accuracy
-		mycc.conv_tol = 1e-10   # Maximum precision convergence
-		mycc.max_cycle = 200    # Many iterations for robust convergence
-		mycc.diis_space = 15    # Maximum DIIS space for optimal convergence
-		mycc.direct = True      # Use direct algorithm for better numerical accuracy
-		
-		print(f"Maximum precision CCSD(T) optimization settings: conv_tol={mycc.conv_tol}, max_cycle={mycc.max_cycle}, diis_space={mycc.diis_space}")
-
-		# Run CCSD calculation with progress tracking
-		with tqdm(desc="🧬 CCSD for Geometry Optimization", unit="iter", colour='green') as pbar:
-			pbar.set_postfix(conv_tol=f"{mycc.conv_tol:.0e}", max_cycle=mycc.max_cycle)
-			print("Running maximum precision CCSD calculation...")
-			start_time = time.time()
-			mycc.run()
-			elapsed = time.time() - start_time
-			pbar.update(1)
-			pbar.set_postfix(converged=mycc.converged, energy=f"{mycc.e_corr:.8f}", time=f"{elapsed:.1f}s")
-		print(f"CCSD calculation completed in {elapsed:.1f}s")
-		
-		if not mycc.converged:
-			raise RuntimeError("CCSD did not converge to required precision - cannot proceed with optimization")
-
-		# Run CCSD(T) triples correction - MANDATORY for maximum computational rigor
-		ccsd_t_energy = None
-		with tqdm(desc="⚛️ CCSD(T) Triples for Optimization", unit="step", colour='red') as pbar:
-			try:
-				if hasattr(mycc, 'ccsd_t'):
-					print("Computing maximum precision CCSD(T) triples correction...")
-					start_time = time.time()
-					ccsd_t_energy = mycc.ccsd_t()
-					elapsed = time.time() - start_time
-					pbar.update(1)
-					pbar.set_postfix(E_T=f"{ccsd_t_energy:.8f}", time=f"{elapsed:.1f}s")
-					print(f"CCSD(T) triples correction completed in {elapsed:.1f}s")
-					print(f"Maximum precision CCSD(T) correction energy: {ccsd_t_energy:.12f} Hartree")
-				else:
-					raise RuntimeError("CCSD(T) method not available - cannot achieve required computational rigor for optimization")
-			except Exception as e:
-				raise RuntimeError(f"CCSD(T) triples correction failed - required for maximum rigor optimization: {e}")
-		
-		try:
-			# Apply PySCF bug patch before gradient calculations
-			patch_pyscf_ccsd_gradient_bug()
-			
-			# build gradients and optimize geometry (may be long)
-			with tqdm(desc="📊 Building CCSD Gradients", unit="step", colour='cyan') as pbar:
-				print("Building CCSD gradients...")
-				g = _grad.ccsd.Gradients(mycc)
-				pbar.update(1)
-			
-			# Test the gradient calculation first with error handling for PySCF bugs
-			with tqdm(desc="🧪 Testing Gradient Calculation", unit="step", colour='yellow') as pbar:
-				print("Testing gradient calculation...")
-				try:
-					# Try to calculate gradients with workarounds for PySCF 2.10.0 bugs
-					test_grad = None
-					
-					# First attempt: direct gradient calculation
-					try:
-						test_grad = g.kernel()
-					except (AttributeError, TypeError) as e:
-						if "'tuple' object has no attribute 'diagonal'" in str(e):
-							print("PySCF 2.10.0 CCSD gradient bug detected. Attempting workaround...")
-							
-							# Force rebuild of CCSD eris with proper fock matrix
-							# Fock matrices are also used in CCSD and CCSD(T), we are not using Hartree-Fock here
-							try:
-								# Rebuild the CCSD object with fresh eris
-								mycc_new = _cc.CCSD(mf)
-								mycc_new.conv_tol = mycc.conv_tol
-								mycc_new.max_cycle = mycc.max_cycle
-								mycc_new.diis_space = mycc.diis_space
-								mycc_new.direct = True
-								
-								# Copy over the converged amplitudes if available
-								if hasattr(mycc, 't1') and hasattr(mycc, 't2') and mycc.converged:
-									try:
-										# Use setattr to avoid type checking issues
-										setattr(mycc_new, 't1', mycc.t1)
-										setattr(mycc_new, 't2', mycc.t2)
-										setattr(mycc_new, 'converged', True)
-										if hasattr(mycc, 'e_corr') and mycc.e_corr is not None:
-											setattr(mycc_new, 'e_corr', mycc.e_corr)
-									except Exception:
-										# If copying fails, re-run CCSD
-										mycc_new.run()
-								else:
-									# Re-run CCSD if amplitudes not available
-									mycc_new.run()
-								
-								# Create new gradient object
-								g = _grad.ccsd.Gradients(mycc_new)
-								test_grad = g.kernel()
-								
-							except Exception as workaround_e:
-								print(f"Workaround failed: {workaround_e}")
-								raise e  # Re-raise original error
-						else:
-							raise e
-					
-					if test_grad is not None:
-						pbar.update(1)
-						pbar.set_postfix(shape=f"{test_grad.shape}")
-						print(f"Gradient test successful, shape: {test_grad.shape}")
-					else:
-						raise RuntimeError("Gradient calculation returned None")
-						
-				except Exception as grad_e:
-					print(f"Gradient calculation failed: {grad_e}")
-					# The gradient failed, this is likely the source of our issue
-					raise RuntimeError(f"CCSD gradient calculation failed: {grad_e}")
-			
-			# Narrow types for static analysis
-			assert berny_solver is not None
-			print("Starting maximum precision CCSD(T) berny geometry optimization...")
-			
-			# Use berny_solver.optimize with explicit error handling
-			with tqdm(desc="Berny Geometry Optimization", total=maxsteps, unit="step", colour='magenta') as pbar:
-				try:
-					start_time = time.time()
-					
-					# Create a closure to track optimization steps
-					step_counter = {'current': 0}
-					
-					def optimization_callback(*args, **kwargs):
-						step_counter['current'] += 1
-						pbar.update(1)
-						pbar.set_postfix(step=f"{step_counter['current']}/{maxsteps}")
-						return True
-					
-					mol_opt: Any = getattr(berny_solver, 'optimize')(g, maxsteps=int(maxsteps))
-					elapsed = time.time() - start_time
-					pbar.set_postfix(completed=True, time=f"{elapsed:.1f}s")
-					print(f"Berny geometry optimization completed in {elapsed:.1f}s")
-				except Exception as berny_e:
-					print(f"Berny optimization failed: {berny_e}")
-					print("Trying direct berny call...")
-					mol_opt = getattr(berny_solver, 'optimize')(g, maxsteps=int(maxsteps))
-			
-			# ensure mol_opt exposes expected API
-			if not hasattr(mol_opt, 'atom_coords') or not hasattr(mol_opt, 'atom_symbol'):
-				# Try different ways to access the optimized geometry
-				if hasattr(mol_opt, 'atom_coord'):
-					coords_opt = mol_opt.atom_coord()
-					symbols = mol_opt.atom_symbol() if hasattr(mol_opt, 'atom_symbol') else [mol_opt.atom_pure_symbol(i) for i in range(len(coords_opt))]
-				elif hasattr(mol_opt, 'atom'):
-					# mol_opt might be a PySCF molecule object
-					coords_opt = mol_opt.atom_coords()
-					symbols = [mol_opt.atom_symbol(i) for i in range(mol_opt.natm)]
-				else:
-					raise RuntimeError("Cannot extract optimized coordinates from berny result")
-			else:
-				coords_opt = mol_opt.atom_coords()
-				symbols = [mol_opt.atom_symbol(i) for i in range(len(coords_opt))]
-			
-			optimized_coords = "\n".join(f"{symbols[i]} {x:.6f} {y:.6f} {z:.6f}" for i, (x, y, z) in enumerate(coords_opt))
-			print("Maximum precision CCSD(T) geometry optimization completed successfully!")
-			return optimized_coords
-		except Exception as e:
-			# CCSD gradients or berny optimization failed — no HF fallback requested
-			print(f"Detailed error: {e}")
-			import traceback
-			traceback.print_exc()
-			raise RuntimeError(f"CCSD geometry optimization failed: {e}")
-	except Exception as e_outer:
-		# CCSD optimization failed
-		raise RuntimeError(f"CCSD optimization failed: {e_outer}")
-
-# Then we get the dipole moment vector of the optimized geometry
+# We need to get the dipole moment vector of the optimized geometry
+# Optimization is done before this dipole computation can begin in its separate module
 def dipole_for_geometry(atom_string: str, spin: int, basis: str = "aug-cc-pVTZ", conv_tol: float = 1e-9, max_cycle: int = 150) -> np.ndarray:
 	"""Return the molecular dipole vector (Debye) computed at CCSD(T) level.
 
@@ -329,7 +59,7 @@ def dipole_for_geometry(atom_string: str, spin: int, basis: str = "aug-cc-pVTZ",
 	mol = gto.M(atom=atom_string, basis=basis, spin=spin)
 	
 	# Run initial SCF calculation with maximum precision for CCSD(T)
-	with tqdm(desc="🔬 SCF Convergence", unit="step", colour='blue') as pbar:
+	with tqdm(desc="SCF Convergence", unit="step", colour='blue') as pbar:
 		if spin == 0:
 			mf = scf.RHF(mol)
 		else:
@@ -366,7 +96,7 @@ def dipole_for_geometry(atom_string: str, spin: int, basis: str = "aug-cc-pVTZ",
 	print(f"High-precision CCSD(T) dipole settings: conv_tol={mycc.conv_tol:.2e}, max_cycle={mycc.max_cycle}")
 	
 	# Run CCSD calculation with maximum precision
-	with tqdm(desc="🧬 CCSD Correlation", unit="step", colour='green') as pbar:
+	with tqdm(desc="CCSD Correlation", unit="step", colour='green') as pbar:
 		pbar.set_postfix(tol=f"{mycc.conv_tol:.0e}", max_cycle=mycc.max_cycle)
 		try:
 			mycc.run()
@@ -381,7 +111,7 @@ def dipole_for_geometry(atom_string: str, spin: int, basis: str = "aug-cc-pVTZ",
 	print(f"High-precision CCSD converged. Correlation energy = {mycc.e_corr:.12f} Hartree")
 	
 	# Compute CCSD(T) triples correction - MANDATORY for maximum accuracy
-	with tqdm(desc="⚛️ CCSD(T) Triples Correction", unit="step", colour='red') as pbar:
+	with tqdm(desc="CCSD(T) Triples Correction", unit="step", colour='red') as pbar:
 		try:
 			if hasattr(mycc, 'ccsd_t'):
 				pbar.set_postfix(status="computing")
@@ -397,12 +127,20 @@ def dipole_for_geometry(atom_string: str, spin: int, basis: str = "aug-cc-pVTZ",
 			raise RuntimeError(f"CCSD(T) triples correction failed - required for maximum accuracy: {e}")
 	
 	# Calculate CCSD dipole moment
-	with tqdm(desc="🔬 Computing CCSD Dipole Moment", unit="step", colour='magenta') as pbar:
+	with tqdm(desc="Computing CCSD Dipole Moment", unit="step", colour='magenta') as pbar:
 		try:
 			# Use CCSD density matrices for dipole calculation
 			dm1 = mycc.make_rdm1()
 			pbar.update(1)
 			pbar.set_postfix(step="density_matrix")
+			
+			# Handle both RHF and UHF cases
+			if isinstance(dm1, tuple):
+				# UHF case: dm1 is (dm1_alpha, dm1_beta)
+				dm1_total = dm1[0] + dm1[1]  # Total density matrix
+			else:
+				# RHF case: dm1 is already the total density matrix
+				dm1_total = dm1
 			
 			# Calculate dipole integrals
 			dip_ints = mol.intor('int1e_r', comp=3)  # x, y, z components
@@ -410,7 +148,8 @@ def dipole_for_geometry(atom_string: str, spin: int, basis: str = "aug-cc-pVTZ",
 			pbar.set_postfix(step="dipole_integrals")
 			
 			# Calculate electronic dipole contribution
-			dip_elec = -np.einsum('xij,ji->x', dip_ints, dm1)
+			# dip_ints has shape (3, nbasis, nbasis), dm1_total has shape (nbasis, nbasis)
+			dip_elec = -np.einsum('xij,ij->x', dip_ints, dm1_total)
 			pbar.update(1)
 			pbar.set_postfix(step="electronic_contribution")
 			
@@ -503,7 +242,7 @@ def compute_µ_derivatives(coords_string: str, specified_spin: int, delta: float
 	max_cycles = 200        # More cycles for robust convergence
 	
 	# Main finite difference progress tracker
-	with tqdm(total=3, desc="🧮 Finite Difference CCSD(T) Calculations", unit="geom", colour='green') as pbar:
+	with tqdm(total=3, desc="Finite Difference CCSD(T) Calculations", unit="geom", colour='green') as pbar:
 		pbar.set_postfix(geometry="equilibrium")
 		µ0 = dipole_for_geometry(atom0, specified_spin, basis=ccsd_basis, conv_tol=tight_conv_tol, max_cycle=max_cycles)
 		pbar.update(1)
@@ -539,3 +278,122 @@ def compute_µ_derivatives(coords_string: str, specified_spin: int, delta: float
 	print(f"Debug: |µ_prime(0)| = {µ_prime_si:.10e} C·m/m (CCSD(T) precision)")
 
 	return float(µ_prime_si), float(µ_double_prime_si)
+
+def compute_µ_derivatives_from_optimization(optimized_coords: np.ndarray, atoms: list[str], specified_spin: int, delta: float = 0.005, basis: str = "aug-cc-pVTZ", atom_index: int = 0, axis: int = 2, bond_pair: tuple[int, int] | None = None, dual_bond_axes: str | None = None, m1: float | None = None, m2: float | None = None) -> tuple[float, float]:
+	"""
+	Compute dipole derivatives using optimized geometry from morse solver.
+	
+	optimized_coords: numpy array of optimized atomic positions from geometry optimization
+	atoms: list of atomic symbols corresponding to coordinates
+	... (other parameters same as compute_µ_derivatives)
+	"""
+	# Convert optimized geometry to coordinate string format
+	coord_lines = []
+	for i, atom in enumerate(atoms):
+		x, y, z = optimized_coords[i]
+		coord_lines.append(f"{atom} {x:.10f} {y:.10f} {z:.10f}")
+	coords_string = "\n".join(coord_lines)
+	
+	print(f"Computing dipole derivatives from optimized geometry with {len(atoms)} atoms")
+	print(f"Optimized geometry (first 3 atoms): {coord_lines[:3]}")
+	
+	return compute_µ_derivatives(
+		coords_string=coords_string,
+		specified_spin=specified_spin,
+		delta=delta,
+		basis=basis,
+		atom_index=atom_index,
+		axis=axis,
+		bond_pair=bond_pair,
+		dual_bond_axes=dual_bond_axes,
+		m1=m1,
+		m2=m2
+	)
+
+def full_pre_morse_dipole_workflow(initial_coords: str | np.ndarray, atoms: list[str], specified_spin: int, delta: float = 0.005, basis: str = "aug-cc-pVTZ", atom_index: int = 0, axis: int = 2, bond_pair: tuple[int, int] | None = None, dual_bond_axes: str | None = None, m1: float | None = None, m2: float | None = None, optimize_geometry: bool = True) -> tuple[float, float, np.ndarray]:
+	"""
+	Complete workflow: geometry optimization → dipole calculation → derivatives
+	
+	initial_coords: initial geometry (string or numpy array)
+	atoms: list of atomic symbols
+	optimize_geometry: whether to run geometry optimization first
+	
+	Returns: (µ_prime, µ_double_prime, optimized_coords)
+	"""
+	print("Starting full Morse dipole derivative workflow")
+	
+	if optimize_geometry:
+		print("Step 1: CCSD(T) geometry optimization")
+		
+		# Convert initial coords to string format for optimize_geometry_ccsd
+		if isinstance(initial_coords, np.ndarray):
+			# Convert numpy array back to coordinate string
+			coord_lines = []
+			for i, atom in enumerate(atoms):
+				x, y, z = initial_coords[i]
+				coord_lines.append(f"{atom} {x:.10f} {y:.10f} {z:.10f}")
+			coords_string = "\n".join(coord_lines)
+		else:
+			coords_string = initial_coords
+		
+		try:
+			# Call the actual geometry optimization function
+			optimized_coords_string = optimize_geometry_ccsd(
+				coords_string=coords_string,
+				specified_spin=specified_spin,
+				basis=basis
+			)
+			
+			# Parse optimized coordinates back to numpy array for consistency
+			lines = [ln.strip() for ln in optimized_coords_string.splitlines() if ln.strip()]
+			optimized_positions = []
+			for ln in lines:
+				parts = ln.split()
+				optimized_positions.append([float(parts[1]), float(parts[2]), float(parts[3])])
+			optimized_coords = np.array(optimized_positions)
+
+			print("✅ CCSD(T) geometry optimization completed successfully")
+
+		except Exception as e:
+			print(f"⚠️ Geometry optimization failed: {e}")
+			print("Using initial coordinates for dipole calculation")
+			if isinstance(initial_coords, str):
+				# Parse string coordinates
+				lines = [ln.strip() for ln in initial_coords.splitlines() if ln.strip()]
+				positions = []
+				for ln in lines:
+					parts = ln.split()
+					positions.append([float(parts[1]), float(parts[2]), float(parts[3])])
+				optimized_coords = np.array(positions)
+			else:
+				optimized_coords = initial_coords.copy()
+	else:
+		print("Step 1: Skipping geometry optimization (using initial coordinates)")
+		if isinstance(initial_coords, str):
+			# Parse string coordinates
+			lines = [ln.strip() for ln in initial_coords.splitlines() if ln.strip()]
+			positions = []
+			for ln in lines:
+				parts = ln.split()
+				positions.append([float(parts[1]), float(parts[2]), float(parts[3])])
+			optimized_coords = np.array(positions)
+		else:
+			optimized_coords = initial_coords.copy()
+	
+	print("Step 2: Computing CCSD(T) dipole derivatives from optimized geometry")
+	µ_prime, µ_double_prime = compute_µ_derivatives_from_optimization(
+		optimized_coords=optimized_coords,
+		atoms=atoms,
+		specified_spin=specified_spin,
+		delta=delta,
+		basis=basis,
+		atom_index=atom_index,
+		axis=axis,
+		bond_pair=bond_pair,
+		dual_bond_axes=dual_bond_axes,
+		m1=m1,
+		m2=m2
+	)
+	
+	print("✅ Complete Morse dipole workflow finished successfully")
+	return µ_prime, µ_double_prime, optimized_coords

@@ -1,13 +1,11 @@
 from typing import Optional
 import typer
-# Use package-relative imports so the module can be imported as `morse_solver`
-# (avoids ImportError when importing via the package namespace).
-from .derivatives_dipole_moment import compute_µ_derivatives, optimize_geometry_ccsd
+from derivatives_dipole_moment import full_pre_morse_dipole_workflow
 # Import callable helpers but avoid importing runtime globals `a` and `λ` at
 # import-time (they are created by `setup_globals`). Import the module as
 # `mm` and reference `mm.a` / `mm.λ` after `setup_globals(...)` has run.
-from .main_morse_solver import setup_globals, M_0n, integrated_molar_absorptivity, epsilon_peak_from_integrated
-from . import main_morse_solver as mm
+from main_morse_solver import setup_globals, M_0n, integrated_molar_absorptivity, epsilon_peak_from_integrated
+import main_morse_solver as mm
 
 # Expose a module-level Typer app so external runners (run_morse_model.py) can import it
 app = typer.Typer(help="Morse overtone CLI for estimating ε_max from transition dipoles")
@@ -29,7 +27,7 @@ def main_callback(ctx: typer.Context):
     """
     if ctx.invoked_subcommand is None:
         typer.echo("This CLI performs the following calulations to determine the molar extinction coefficent ε_(max) in M·cm^-1 for any organic molecule's IR (or NIR) overtone.")
-        typer.echo("Run 'python morse_solver.py stretches' to see the allowed organic stretches.")
+        typer.echo("Run 'python3 morse_solver.py stretches' to see the allowed organic stretches.")
 
 @app.command("stretches", help="Print allowed organic stretches")
 def stretches():
@@ -95,7 +93,7 @@ def compute(
 				# Check if this is dual bond axes format: "(n,x);(a,x)"
 				if ';' in bond and '(' in bond and ')' in bond:
 					# Dual bond axes format
-					dual_bond_axes = bond  # Pass the string directly to compute_µ_derivatives
+					dual_bond_axes = bond  # Pass the string directly to compute_μ_derivatives
 					bond_pair = None  # Don't use single bond_pair for dual axes
 				else:
 					# Single bond pair format: "n,x"
@@ -110,29 +108,32 @@ def compute(
 		# Show theory level information
 		typer.secho("Beginning CCSD(T) for ab initio molecular geometry optimization and dipole derivative calculation.", fg="green", bold=True)
 		
-		# Use CCSD optimization
+		# Parse atoms from coordinate string for the workflow
+		coord_lines = [ln.strip() for ln in coords.splitlines() if ln.strip()]
+		atoms = []
+		for ln in coord_lines:
+			parts = ln.split()
+			if len(parts) >= 1:
+				atoms.append(parts[0])
+		
+		# Use the complete workflow function
 		try:
-			coords_to_use = optimize_geometry_ccsd(coords, specified_spin_int, basis=basis_set)
-		except Exception as e:
-			typer.secho(f"CCSD optimization failed: {e}", fg="red", err=True)
-			typer.secho("Try using --basis=STO-3G for a smaller basis set", fg="yellow")
-			raise typer.Exit(code=2)
-		try:
-			# Pass the masses m1 and m2 that were converted from amu_a and amu_b
-			# Note: compute_µ_derivatives expects masses in amu, so use original amu_a, amu_b
-			µ_prime_val, µ_double_prime_val = compute_µ_derivatives(
-				coords_to_use, 
-				specified_spin_int, 
-				delta=delta_val, 
-				bond_pair=bond_pair, 
+			µ_prime_val, µ_double_prime_val, optimized_coords = full_pre_morse_dipole_workflow(
+				initial_coords=coords,
+				atoms=atoms,
+				specified_spin=specified_spin_int,
+				delta=delta_val,
+				basis=basis_set,
+				bond_pair=bond_pair,
 				dual_bond_axes=dual_bond_axes,
 				m1=amu_a,  # Pass original amu values, not kg
 				m2=amu_b,
-				basis=basis_set
+				optimize_geometry=True
 			)
 		except Exception as e:
-			typer.secho(f"Error computing dipole derivatives from coordinates: {e}", fg="red", err=True)
-			raise typer.Exit(code=1)
+			typer.secho(f"CCSD(T) workflow failed: {e}", fg="red", err=True)
+			typer.secho("Try using --basis=STO-3G for a smaller basis set", fg="yellow")
+			raise typer.Exit(code=2)
 		µ_prime = float(µ_prime_val)
 		µ_double_prime = float(µ_double_prime_val)
 	else:
@@ -194,19 +195,33 @@ def compute(
 			specified_spin_int = int(specified_spin)
 			# ensure delta is a float (use the same local variable or default)
 			delta_val = float(delta) if delta is not None else 0.01
-			# Use CCSD optimization
+			
+			# Extract atom list from coordinates
+			coord_lines = [ln.strip() for ln in coords.splitlines() if ln.strip()]
+			atoms = []
+			for ln in coord_lines:
+				parts = ln.split()
+				if len(parts) >= 1:
+					atoms.append(parts[0])
+			
+			# Use the complete workflow function
 			try:
-				coords_to_use = optimize_geometry_ccsd(coords, specified_spin_int, basis=basis_set)
+				µ_prime_val, µ_double_prime_val, optimized_coords = full_pre_morse_dipole_workflow(
+					initial_coords=coords,
+					atoms=atoms,
+					specified_spin=specified_spin_int,
+					delta=delta_val,
+					basis=basis_set,
+					bond_pair=bond_pair,
+					dual_bond_axes=None,  # Interactive mode doesn't support dual bond axes yet
+					m1=amu_a,  # Pass original amu values, not kg
+					m2=amu_b,
+					optimize_geometry=True
+				)
 			except Exception as e:
-				typer.secho(f"CCSD optimization failed: {e}", fg="red", err=True)
+				typer.secho(f"CCSD(T) workflow failed: {e}", fg="red", err=True)
 				typer.secho("Try using --basis=STO-3G for a smaller basis set", fg="yellow")
 				raise typer.Exit(code=2)
-			# compute dipole derivatives
-			try:
-				µ_prime_val, µ_double_prime_val = compute_µ_derivatives(coords_to_use, specified_spin_int, delta=delta_val, bond_pair=bond_pair, basis=basis_set)
-			except Exception as e:
-				typer.secho(f"Error computing dipole derivatives from coordinates: {e}", fg="red", err=True)
-				raise typer.Exit(code=1)
 			µ_prime = float(µ_prime_val)
 			µ_double_prime = float(µ_double_prime_val)
 		else:

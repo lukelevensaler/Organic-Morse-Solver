@@ -44,7 +44,6 @@
    - **Typer**: CLI framework
    - **PyBerny**: Geometry optimization
    - **H5PY**: Data storage for quantum chemistry results
-   - **PyTest**: Test management
    - **High-Precision Libraries**: Optimized BLAS/LAPACK for numerical stability
    - **Parallel Computing**: MPI support for distributed quantum chemistry calculations
 
@@ -84,7 +83,7 @@ Once installed, you can run the solver from the repository directory:
 conda activate morse_solver
 
 # Run the CLI
-python run_morse_model.py compute --help
+python3 run_morse_model.py compute --help
 ```
 
 ### Troubleshooting
@@ -94,11 +93,6 @@ python run_morse_model.py compute --help
 1. **Conda environment creation fails**: Ensure you have sufficient disk space (~2GB) and internet connectivity
 2. **PySCF import errors**: The environment includes all required quantum chemistry dependencies
 3. **Permission errors**: Ensure you have write access to your conda installation directory
-
-**Platform Notes:**
-- Tested on **macOS** (Apple Silicon and Intel)
-- **Linux** support through conda-forge packages
-- **Windows** support via conda environments (some packages may require Windows-specific builds)
 
 ---
 
@@ -635,7 +629,7 @@ H 1.1 0.0 0.0
 Enter spin multiplicity: 0
 Enter bond atom indices (i,j format): 0,1
 
-🔬 Advanced Options (press Enter for defaults)
+Advanced Options (press Enter for defaults)
 Finite difference step size (Å) [0.005]: 
 Basis set [aug-cc-pVTZ]: aug-cc-pVQZ
 ```

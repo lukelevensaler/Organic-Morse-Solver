@@ -1,4 +1,0 @@
-The tests in this directory are for the pre-Morse Model logic in the codebase where 
-silent failures could cascade if left unchecked. Test are not needed for the main 
-anharmonicity logic, where it imediately becomes apparent through the CLI output 
-if something went wrong

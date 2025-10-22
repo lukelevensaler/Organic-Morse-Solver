@@ -4,8 +4,8 @@ This small script proxies command-line arguments to the Typer app defined in
 `morse_solver` (or `morse_solver.compute` / `morse_solver.main_morse_solver`).
 
 Usage examples:
-    python run_morse.py stretches
-    python run_morse.py compute --help
+    python3 run_morse.py stretches
+    python3 run_morse.py compute --help
 
 The script locates the Typer app by importing `morse_solver` and looking for a
 module-level `app` variable. If not found, it will try `morse_solver.compute`.

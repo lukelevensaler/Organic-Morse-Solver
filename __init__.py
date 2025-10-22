@@ -16,9 +16,9 @@ MODULE_CANDIDATES = (
 )
 
 app: Optional[object] = None
-for _mod in MODULE_CANDIDATES:
+for mod in MODULE_CANDIDATES:
     try:
-        m = import_module(_mod)
+        m = import_module(mod)
         if hasattr(m, "app"):
             app = getattr(m, "app")
             break

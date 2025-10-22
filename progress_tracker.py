@@ -183,7 +183,7 @@ def track_function_progress(task_id: str, description: str):
         return wrapper
     return decorator
 
-def track_ccsd_calculation(description: str):
+def trackccsd_calculation(description: str):
     """Specialized decorator for CCSD calculations."""
     def decorator(func):
         def wrapper(*args, **kwargs):
