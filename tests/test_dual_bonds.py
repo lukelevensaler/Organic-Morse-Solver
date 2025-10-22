@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 def test_dual_bond_axes():
     """Test dual bond axes functionality with H2O molecule."""
     try:
-        from derivatives_dipole_moment import compute_mu_derivatives
+        from derivatives_dipole_moment import compute_µ_derivatives
         print("Successfully imported derivatives_dipole_moment module")
     except ImportError as e:
         print(f"Failed to import module: {e}")
@@ -30,11 +30,11 @@ H -0.757000 0.586000 0.000000"""
     print("\nTesting dual bond axes parsing...")
     
     # Test case: both O-H bonds in H2O
-    dual_axes = "(0,1);(0,2)"  # O-H1 and O-H2 bonds
+    dual_axes = "(1,2);(1,3)"  # O-H1 and O-H2 bonds (1-based indexing)
     print(f"Dual axes string: {dual_axes}")
     
     # This should work if our parsing is correct
-    result = compute_mu_derivatives(
+    result = compute_µ_derivatives(
         coords_string=test_coords,
         specified_spin=0,  # Singlet H2O
         delta=0.01,  # Small displacement
@@ -44,9 +44,9 @@ H -0.757000 0.586000 0.000000"""
         m2=1.008  # Mass of H (same as main_morse_solver.py m2 = B)
     )
     
-    print(f"Derivatives computed successfully: mu1={result[0]:.6e}, mu2={result[1]:.6e}")
+    print(f"Derivatives computed successfully: µ_prime={result[0]:.6e}, µ_double_prime={result[1]:.6e}")
     
-    # Assertions for pytest - result is a tuple of (mu1, mu2)
+    # Assertions for pytest - result is a tuple of (µ_prime, µ_double_prime)
     assert result is not None
     assert isinstance(result, tuple)
     assert len(result) == 2

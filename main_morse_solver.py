@@ -132,8 +132,8 @@ def N_v(v, a, λ):
 # ===== DIPLOE EXPANSION & OVERLAP INTEGRALS =====
 
 # Dipole expansion around Q=0 (user variables preserved):
-# µ(Q) = µ_0 + µ'(0) Q + 1/2 µ''(0) Q^2 + ...
-# We will work with the derivatives: mu1 = µ'(0), mu2 = µ''(0)
+# µ(Q) = µ_0 + µ_prime(0) Q + 1/2 µ_double_prime(0) Q^2 + ...
+# We will work with the derivatives: µ_prime = µ_prime(0), µ_double_prime = µ_double_prime(0)
 
 def laguerre_coeffs(n, alpha):
 	"""Return coefficients c_j for L_n^{(alpha)}(y) = sum_{j=0}^n c_j y^j.
@@ -232,7 +232,7 @@ def S2(v_i, v_f, a, λ):
 
 
 # Transition dipole using low-order expansion
-def M_if(v_i, v_f, a, λ, mu1, mu2=0.0):
+def M_if(v_i, v_f, a, λ, µ_prime, µ_double_prime=0.0):
 	"""Approximate vibrational transition dipole M_{i->f}.
 
 	Parameters
@@ -243,13 +243,13 @@ def M_if(v_i, v_f, a, λ, mu1, mu2=0.0):
 		Morse parameter a (units: 1/length, e.g., 1/m).
 	λ : float
 		Dimensionless Morse parameter.
-	mu1 : float
-		First derivative of the molecular dipole at equilibrium, µ'(0)
+	µ_prime : float
+		First derivative of the molecular dipole at equilibrium, µ_prime(0)
 		(units: C·m per meter, i.e., C). Typical molecular-scale
 		vibrational derivatives are ~1e-30 to 1e-29 C·m/m for X–H/O–H/N–H
 		stretches (user should supply an appropriate value).
-	mu2 : float, optional
-		Second derivative µ''(0) (units: C·m per m^2). Typical scales
+	µ_double_prime : float, optional
+		Second derivative µ_double_prime(0) (units: C·m per m^2). Typical scales
 		are ~1e-40 to 1e-39 C·m/m^2. Default 0.0 to ignore quadratic term.
 
 	Returns
@@ -257,10 +257,10 @@ def M_if(v_i, v_f, a, λ, mu1, mu2=0.0):
 	M : float
 		Transition dipole (C·m).
 	"""
-	# mu1 = µ'(0), mu2 = µ''(0)
-	M = mu1 * S1(v_i, v_f, a, λ)
-	if mu2 != 0.0:
-		M += 0.5 * mu2 * S2(v_i, v_f, a, λ)
+	# µ_prime = µ_prime(0), µ_double_prime = µ_double_prime(0)
+	M = µ_prime * S1(v_i, v_f, a, λ)
+	if µ_double_prime != 0.0:
+		M += 0.5 * µ_double_prime * S2(v_i, v_f, a, λ)
 	return M
 
 
@@ -533,8 +533,8 @@ def S2_0n(n, a, λ):
 	return result
 
 
-def M_0n(n, a, λ, mu1, mu2=0.0):
-	"""Convenience wrapper: compute M_{0->n} ≈ mu1*S1 + 0.5*mu2*S2
+def M_0n(n, a, λ, µ_prime, µ_double_prime=0.0):
+	"""Convenience wrapper: compute M_{0->n} ≈ µ_prime*S1 + 0.5*µ_double_prime*S2
 
 	Parameters
 	----------
@@ -542,10 +542,10 @@ def M_0n(n, a, λ, mu1, mu2=0.0):
 		Overtone quantum number (final state).
 	a, λ : floats
 		Morse parameters (see file-level definitions).
-	mu1 : float
-		µ'(0) (units: C·m/m). Typical expected range: 1e-30 -- 1e-29 C·m/m.
-	mu2 : float, optional
-		µ''(0) (units: C·m/m^2). Typical expected range: 1e-40 -- 1e-39 C·m/m^2.
+	µ_prime : float
+		µ_prime(0) (units: C·m/m). Typical expected range: 1e-30 -- 1e-29 C·m/m.
+	µ_double_prime : float, optional
+		µ_double_prime(0) (units: C·m/m^2). Typical expected range: 1e-40 -- 1e-39 C·m/m^2.
 
 	Returns
 	-------
@@ -560,12 +560,12 @@ def M_0n(n, a, λ, mu1, mu2=0.0):
 	print(f"Debug: S1 overlap integral = {S1:.6e}")
 	print(f"Debug: S2 overlap integral = {S2:.6e}")
 	
-	M = mu1 * S1
-	print(f"Debug: μ1 * S1 = {mu1:.6e} * {S1:.6e} = {M:.6e}")
+	M = µ_prime * S1
+	print(f"Debug: μ1 * S1 = {µ_prime:.6e} * {S1:.6e} = {M:.6e}")
 	
-	if mu2 != 0.0:
-		M2_contrib = 0.5 * mu2 * S2
-		print(f"Debug: 0.5 * μ2 * S2 = 0.5 * {mu2:.6e} * {S2:.6e} = {M2_contrib:.6e}")
+	if µ_double_prime != 0.0:
+		M2_contrib = 0.5 * µ_double_prime * S2
+		print(f"Debug: 0.5 * μ2 * S2 = 0.5 * {µ_double_prime:.6e} * {S2:.6e} = {M2_contrib:.6e}")
 		M += M2_contrib
 		print(f"Debug: Total M = {M:.6e}")
 	else:

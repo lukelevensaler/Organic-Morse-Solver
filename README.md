@@ -45,6 +45,8 @@
    - **PyBerny**: Geometry optimization
    - **H5PY**: Data storage for quantum chemistry results
    - **PyTest**: Test management
+   - **High-Precision Libraries**: Optimized BLAS/LAPACK for numerical stability
+   - **Parallel Computing**: MPI support for distributed quantum chemistry calculations
 
    Create the environment named `morse_solver`:
    ```bash
@@ -72,15 +74,6 @@
     - N–H
     - O–H
    ```
-
-### Environment Details
-
-The `morse_solver` conda environment includes:
-- **Python 3.11**: Modern Python with excellent performance
-- **PySCF 2.10.0**: State-of-the-art quantum chemistry package for CCSD(T) calculations
-- **Scientific Computing Stack**: NumPy 2.0.1, SciPy 1.16.2 for high-performance numerical work
-- **High-Precision Libraries**: Optimized BLAS/LAPACK for numerical stability
-- **Parallel Computing**: MPI support for distributed quantum chemistry calculations
 
 ### Usage After Installation
 

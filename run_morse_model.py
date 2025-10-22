@@ -19,6 +19,9 @@ MODULE_NAMES = [
     "morse_solver.main_morse_solver",
     "morse_solver.derivatives_dipole_moment",
     "morse_solver.run_morse_model",
+    "morse_solver.high_precision_arithmetic",
+    "morse_solver.pyscf_monkeypatch",
+    "morse_solver.normalize_bonds"
 ]
 
 # If this script is executed with CWD inside the `morse_solver` package
