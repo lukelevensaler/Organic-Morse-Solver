@@ -1,5 +1,7 @@
-# This CLI performs the following calulations to determine the molar extinction coefficent ε in $$\{M·cm}^{-1}\$$ for any organic molecule's IR (or NIR) overtone.
 
+# Welcome to the Organic Morse Solver, a quantum computation for deriving molar extinction coefficients for IR/NIR peaks.
+
+## This CLI performs the following quantum chemistry and Morse Model-based anharmonicty calulations to determine the molar extinction coefficent ε in $$\{M·cm}^{-1}\$$ for any organic molecule's IR (or NIR) overtone peak. Its algorithm can even compute ε values for fundamnetal peaks, at full anharmonic accuracy.
 
 
 ## Inputs required
@@ -588,8 +590,8 @@ python3 \
   --observed 8700.0 \
   --overtone 3 \
   --coords "C 0.0 0.0 0.0\nH 1.1 0.0 0.0" \
-  --spin 0 \
-  --atom-indices "0,1" \
+  --specified-spin 0 \
+  --bond "0,1" \
   --delta 0.005 \
   --basis aug-cc-pVTZ \
   --fwhm 75.0
@@ -601,8 +603,8 @@ python3 \
 - `--observed`: Observed overtone frequency (cm⁻¹)
 - `--overtone`: Integer overtone number (n for 0→n transition)
 - `--coords`: Molecular geometry in XYZ format (quoted multiline string)
-- `--spin`: Spin multiplicity (0 for singlet, 1 for doublet, etc.)
-- `--atom-indices`: Bond atom indices as "i,j" (0-based)
+- `--specified-spin`: Spin multiplicity (0 for singlet, 1 for doublet, etc.)
+- `--bond`: Bond atom indices as "i,j" (0-based)
 - `--delta`: Finite difference displacement (Angstrom, default: 0.005)
 - `--basis`: Quantum chemistry basis set (default: aug-cc-pVTZ). Can be overridden with higher quality sets like aug-cc-pVQZ for maximum accuracy, or smaller sets like STO-3G for faster computation
 - `--fwhm`: Line width for peak extinction (cm⁻¹, default: 75.0)
@@ -647,9 +649,9 @@ Basis set [aug-cc-pVTZ]: aug-cc-pVQZ
 
 ### Geometry Input Options
 
-#### Option 1: Direct coordinate input
+#### Option 1: Direct molecular information input via the interactive CLI
 ```bash
-# In interactive mode:
+# Example of how the inetractive prompt handles:
 Enter molecular coordinates (Element x y z format):
 C 0.000000 0.000000 0.000000
 H 1.100000 0.000000 0.000000
@@ -658,7 +660,7 @@ H -1.800000 0.800000 0.000000
 [blank line to finish]
 ```
 
-#### Option 2: File input
+#### Option 2: File input (+ other necesary molecular parameters in interactive mode)
 ```bash
 # Create coordinates file (e.g., molecule.xyz):
 cat > molecule.xyz << EOF
@@ -669,10 +671,55 @@ H -1.800000 0.800000 0.000000
 EOF
 
 # Then use in batch mode:
-python cli.py --coords molecule.xyz [other parameters...]
+python3 run_morse_model.py compute --coords molecule.xyz [other parameters...]
+
 ```
 
-### Basis Set Selection
+### Option 3: Direct input of all coordinates and parameters (Advanced)
+
+#### Examples:
+
+#### C-H Stretch in Methane:
+```bash
+python3 run_morse_model.py compute \
+  --m1 12.011 --m2 1.008 \
+  --fundamental 2917 --observed 8750 --overtone 3 \
+  --coords "C 0.0 0.0 0.0\nH 1.09 0.0 0.0\nH -0.36 1.03 0.0\nH -0.36 -0.51 0.89\nH -0.36 -0.51 -0.89" \
+  --specified-spin 0 --bond "0,1"
+```
+
+#### O-H Stretch in Water:
+```bash
+python3 run_morse_model.py compute \
+  --m1 15.999 --m2 1.008 \
+  --fundamental 3657 --observed 10935 --overtone 3 \
+  --coords "O 0.0 0.0 0.0\nH 0.757 0.587 0.0\nH -0.757 0.587 0.0" \
+  --specified-spin 0 --bond "0,1"
+```
+
+#### Dual Bond System:
+For molecules with symmetric stretching modes (the semicolon between bond axes is CRUCIAL):
+```bash
+python3 run_morse_model.py compute \
+  --dual-bonds "(0,2);(1,2)" \ 
+  --m1 12.011 --m2 15.999 \
+  [other parameters...]
+```
+
+#### Fundamental peak ε values can also be determined with this software, if the overtone order is set to 0 and the observed frequency input is the same as the fundamental frequency:
+
+```bash
+python3 run_morse_model.py compute \
+  --m1 15.999 --m2 1.008 \
+  --fundamental 3657 --observed 3657 --overtone 0 \
+  --coords "O 0.0 0.0 0.0\nH 0.757 0.587 0.0\nH -0.757 0.587 0.0" \
+  --specified-spin 0  --bond "0,1"
+```
+
+
+## NOTE: ALL of the above examples are just arbitrary numbers, not actual valid data, including the hypothetical methane example. DO NOT USE THOSE DEMONSTRATION NUMBERS IN ACTUAL SCIENTIFIC RESEARCH!
+
+### What Is Basis Set Selection?
 
 The `--basis` flag allows you to control the quantum chemistry basis set used for CCSD(T) calculations:
 
@@ -693,39 +740,8 @@ The `--basis` flag allows you to control the quantum chemistry basis set used fo
 
 **Example with custom basis set:**
 ```bash
-python cli.py --basis aug-cc-pVQZ [other parameters...]
+python3 run_morse_model.py compute --basis aug-cc-pVQZ [other parameters...]
 ```
-
-### Advanced Usage Examples
-
-#### C-H Stretch in Methane:
-```bash
-python cli.py \
-  --m1 12.011 --m2 1.008 \
-  --fundamental 2917 --observed 8750 --overtone 3 \
-  --coords "C 0.0 0.0 0.0\nH 1.09 0.0 0.0\nH -0.36 1.03 0.0\nH -0.36 -0.51 0.89\nH -0.36 -0.51 -0.89" \
-  --spin 0 --atom-indices "0,1"
-```
-
-#### O-H Stretch in Water:
-```bash
-python cli.py \
-  --m1 15.999 --m2 1.008 \
-  --fundamental 3657 --observed 10935 --overtone 3 \
-  --coords "O 0.0 0.0 0.0\nH 0.757 0.587 0.0\nH -0.757 0.587 0.0" \
-  --spin 0 --atom-indices "0,1"
-```
-
-#### Dual Bond System (Advanced):
-For molecules with symmetric stretching modes:
-```bash
-python cli.py \
-  --dual-bonds "(0,2);(1,2)" \
-  --m1 12.011 --m2 15.999 \
-  [other parameters...]
-```
-
-## NOTE: ALL of the above examples are just arbitrary numbers, not actual valid data, including the hypothetical methane example. DO NOT USE THOSE DEMONSTRATION NUMBERS IN ACTUAL SCIENTIFIC RESEARCH!
 
 ### Output
 
