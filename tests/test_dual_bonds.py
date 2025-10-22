@@ -5,28 +5,28 @@ Test script for dual bond axes functionality in derivatives_dipole_moment.py
 
 import sys
 import os
-import numpy as np
 
-# Add the current directory to the path so we can import our module
-sys.path.insert(0, '/Users/lukelevensaler/morse_solver')
+# Add the parent directory to the path so we can import our module
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-try:
-    from derivatives_dipole_moment import compute_mu_derivatives
-    print("Successfully imported derivatives_dipole_moment module")
-except ImportError as e:
-    print(f"Failed to import module: {e}")
-    sys.exit(1)
+def test_dual_bond_axes():
+    """Test dual bond axes functionality with H2O molecule."""
+    try:
+        from derivatives_dipole_moment import compute_mu_derivatives
+        print("Successfully imported derivatives_dipole_moment module")
+    except ImportError as e:
+        print(f"Failed to import module: {e}")
+        raise
 
-# Test molecule: simple H2O for testing
-test_coords = """O 0.000000 0.000000 0.000000
+    # Test molecule: simple H2O for testing
+    test_coords = """O 0.000000 0.000000 0.000000
 H 0.757000 0.586000 0.000000
 H -0.757000 0.586000 0.000000"""
 
-print("Test coordinates:")
-print(test_coords)
+    print("Test coordinates:")
+    print(test_coords)
 
-# Test parsing dual bond axes string
-try:
+    # Test parsing dual bond axes string
     print("\nTesting dual bond axes parsing...")
     
     # Test case: both O-H bonds in H2O
@@ -46,9 +46,24 @@ try:
     
     print(f"Derivatives computed successfully: mu1={result[0]:.6e}, mu2={result[1]:.6e}")
     
-except Exception as e:
-    print(f"Error during computation: {e}")
-    import traceback
-    traceback.print_exc()
+    # Assertions for pytest - result is a tuple of (mu1, mu2)
+    assert result is not None
+    assert isinstance(result, tuple)
+    assert len(result) == 2
+    assert isinstance(result[0], float)
+    assert isinstance(result[1], float)
+    
+    print("✅ Dual bond axes test completed successfully!")
 
-print("\nTest completed.")
+if __name__ == "__main__":
+    print("Dual Bond Axes Test for Morse Solver")
+    print("="*50)
+    
+    try:
+        test_dual_bond_axes()
+        print("\n✅ Dual bond axes test passed!")
+        print("Your environment is properly configured.")
+    except Exception:
+        print("\n❌ Test failed!")
+        print("There may be issues with your PySCF installation.")
+        raise

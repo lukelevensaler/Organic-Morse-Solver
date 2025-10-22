@@ -47,5 +47,6 @@ if app is None:
     sys.exit(2)
 
 if __name__ == "__main__":
-    # Forward all args to the Typer app
+    # Forward all args to the Typer app in cli.py 
+    # (which has a compute function that runs the whole stack)
     app()

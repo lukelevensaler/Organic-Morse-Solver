@@ -1,5 +1,7 @@
 # This CLI performs the following calulations to determine the molar extinction coefficent ε in $$\{M·cm}^{-1}\$$ for any organic molecule's IR (or NIR) overtone.
 
+
+
 ## Inputs required
 
 * Molar mass (amu) of element A in an A-B stretch
@@ -37,9 +39,10 @@
    The repository includes an `environment.yml` file that specifies all required dependencies including:
    - **PySCF**: Quantum chemistry calculations (CCSD(T) level theory)
    - **NumPy/SciPy**: Numerical computations and special functions
-   - **Typer**: Command-line interface framework
+   - **Typer**: CLI framework
    - **PyBerny**: Geometry optimization
    - **H5PY**: Data storage for quantum chemistry results
+   - **PyTest**: Test management
 
    Create the environment named `morse_solver`:
    ```bash
@@ -565,7 +568,7 @@ $$\(
 \)$$
 - Plug in the computed integral from Step 2 and the user-specified FWHM.
 
-- Since IR overtones usually have extremely small molar exticntion coefficients in general, and NIR overtones have even smaller values, the results are scaled by a factor of $$\10^64\$$. This constant scalar multiple at the end of all calculations ensures that the results are scientifically usable, representing a **relative** molar absorptivity value.
+- Since IR overtones usually have extremely small molar exticntion coefficients in general, and NIR overtones have even smaller values, the results are scaled by a factor of $$\10^64\$$. This constant scalar multiple at the end of all calculations ensures that the results are scientifically usable, representing a *relative* molar absorptivity value.
 
 ---
 
@@ -578,7 +581,7 @@ The Morse solver provides two usage modes: **batch mode** (all parameters at onc
 Provide all required parameters in a single command for automated workflows:
 
 ```bash
-python cli.py \
+python3 \
   --m1 12.011 \
   --m2 1.008 \
   --fundamental 2900.0 \
@@ -609,7 +612,7 @@ python cli.py \
 Run without parameters for guided input:
 
 ```bash
-python cli.py
+python3 run_morse_solver
 ```
 
 The CLI will prompt for each parameter:
