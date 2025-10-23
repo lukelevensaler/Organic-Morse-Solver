@@ -57,27 +57,32 @@ def dipole_for_geometry(atom_string: str, spin: int, basis: str = "aug-cc-pVTZ",
 	"""
 	print(f"Computing CCSD(T) dipole for geometry with basis {basis}")
 	
-	mol = gto.M(atom=atom_string, basis=basis, spin=spin)
+	# Import stabilization module
+	from scf_stabilization import robust_scf_calculation, check_geometry_for_problems
 	
-	# Run initial SCF calculation with maximum precision for CCSD(T)
-	with tqdm(desc="SCF Convergence", unit="step", colour='blue') as pbar:
-		if spin == 0:
-			mf = scf.RHF(mol)
-		else:
-			mf = scf.UHF(mol)
-		
-		# Use very tight SCF convergence for highest quality CCSD(T)
-		mf.conv_tol = 1e-12  # Extremely tight for CCSD(T) accuracy
-		mf.max_cycle = 300   # More cycles for robust convergence
-		mf.diis_space = 12   # Larger DIIS space for better SCF convergence
-		pbar.set_postfix(tol=f"{mf.conv_tol:.0e}", max_cycle=mf.max_cycle)
-		
-		mf.run()
-		pbar.update(1)
-		pbar.set_postfix(converged=mf.converged, energy=f"{mf.e_tot:.6f}")
+	# Check geometry for potential problems
+	check_geometry_for_problems(atom_string)
+	
+	# Run robust SCF calculation with automatic singularity handling
+	with tqdm(desc="Robust SCF Convergence", unit="step", colour='blue') as pbar:
+		try:
+			mf = robust_scf_calculation(
+				atom_string=atom_string, 
+				spin=spin, 
+				basis=basis,
+				target_conv_tol=1e-12,  # Target extremely tight convergence
+				max_cycle=300
+			)
+			pbar.update(1)
+			pbar.set_postfix(converged=mf.converged, energy=f"{mf.e_tot:.6f}")
+		except Exception as e:
+			raise RuntimeError(f"Robust SCF calculation failed: {e}")
 	
 	if not mf.converged:
 		raise RuntimeError("SCF did not converge to required precision - cannot proceed with high-accuracy CCSD(T)")
+	
+	# Get molecule object from the mean field calculation
+	mol = mf.mol
 	
 	print(f"High-precision SCF converged for CCSD(T). Energy = {mf.e_tot:.12f} Hartree")
 	

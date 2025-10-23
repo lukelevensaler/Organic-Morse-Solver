@@ -9,7 +9,7 @@ H -1.1142 1.1620 0.0000" \
   --bond "1,4" \
   --delta 0.01 \
   --fwhm 10 \
-    --scaling-factor 64 \
+  --scaling-factor 64 \
   --basis STO-3G
 
 # Basis flag can and should be changed as needed, or default used

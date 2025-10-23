@@ -44,29 +44,35 @@ def optimize_geometry_ccsd(coords_string: str, specified_spin: int, basis: str =
 		positions.append([float(parts[1]), float(parts[2]), float(parts[3])])
 	positions = np.array(positions, dtype=float)
 
-	# build molecule
-	mol = gto.M(atom="\n".join(f"{a} {x} {y} {z}" for a, (x, y, z) in zip(atoms, positions)), basis=basis, spin=specified_spin, unit='Angstrom')
-
-	# run initial mean-field with maximum precision for CCSD(T)
-	if specified_spin == 0:
-		mf = scf.RHF(mol)
-	else:
-		mf = scf.UHF(mol)
+	# Import stabilization module
+	from scf_stabilization import robust_scf_calculation, check_geometry_for_problems
 	
-	# Use maximum precision SCF settings for CCSD(T) optimization
-	mf.conv_tol = 1e-12   # Extremely tight convergence
-	mf.max_cycle = 400    # Many cycles for robust convergence
-	mf.diis_space = 15    # Large DIIS space
+	# Build geometry string for stabilization functions
+	geometry_string = "\n".join(f"{a} {x} {y} {z}" for a, (x, y, z) in zip(atoms, positions))
 	
-	# Start progress tracking for SCF optimization
-	with tqdm(desc="SCF for Geometry Optimization", unit="step", colour='blue') as pbar:
-		pbar.set_postfix(tol=f"{mf.conv_tol:.0e}", max_cycle=mf.max_cycle)
-		mf.run()
-		pbar.update(1)
-		pbar.set_postfix(converged=mf.converged, energy=f"{mf.e_tot:.6f}")
+	# Check geometry for potential problems
+	check_geometry_for_problems(geometry_string)
+	
+	# Run robust SCF calculation with automatic singularity handling
+	with tqdm(desc="Robust SCF for Geometry Optimization", unit="step", colour='blue') as pbar:
+		try:
+			mf = robust_scf_calculation(
+				atom_string=geometry_string,
+				spin=specified_spin,
+				basis=basis,
+				target_conv_tol=1e-12,  # Target extremely tight convergence
+				max_cycle=400
+			)
+			pbar.update(1)
+			pbar.set_postfix(converged=mf.converged, energy=f"{mf.e_tot:.6f}")
+		except Exception as e:
+			raise RuntimeError(f"Robust SCF calculation failed: {e}")
 	
 	if not mf.converged:
 		raise RuntimeError("High-precision SCF did not converge - cannot proceed with CCSD(T) optimization")
+	
+	# Get molecule object from the mean field calculation
+	mol = mf.mol
 
 	# lazily import cc and grad to check for analytic gradient support
 	try:
