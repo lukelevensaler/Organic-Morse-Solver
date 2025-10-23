@@ -28,6 +28,7 @@ from optimize_geometry import optimize_geometry_ccsd
 
 # We need to get the dipole moment vector of the optimized geometry
 # Optimization is done before this dipole computation can begin in its separate module
+
 def dipole_for_geometry(atom_string: str, spin: int, basis: str = "aug-cc-pVTZ", conv_tol: float = 1e-9, max_cycle: int = 150) -> np.ndarray:
 	"""Return the molecular dipole vector (Debye) computed at CCSD(T) level.
 
