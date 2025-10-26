@@ -12,7 +12,7 @@ import warnings
 from typing import Tuple, Optional
 
 
-def check_overlap_condition_number(mol: gto.Mole, threshold: float = 5e6) -> Tuple[float, bool]:
+def check_overlap_condition_number(mol: gto.Mole, threshold: float = 1e7) -> Tuple[float, bool]:
     """
     Check the condition number of the overlap matrix to detect potential singularities.
     
@@ -21,8 +21,8 @@ def check_overlap_condition_number(mol: gto.Mole, threshold: float = 5e6) -> Tup
     mol : gto.Mole
         PySCF molecule object
     threshold : float
-        Threshold for determining if overlap matrix is singular (default: 5e6)
-        More permissive threshold since 1e6-5e6 is often still acceptable
+        Threshold for determining if overlap matrix is singular (default: 1e7)
+        Increased threshold to handle large basis sets like aug-cc-pV5Z
         
     Returns:
     --------
@@ -53,7 +53,7 @@ def check_overlap_condition_number(mol: gto.Mole, threshold: float = 5e6) -> Tup
     return condition_number, is_singular
 
 
-def stabilize_scf_convergence(mf, overlap_threshold: float = 5e6) -> None:
+def stabilize_scf_convergence(mf, overlap_threshold: float = 1e7) -> None:
     """
     Apply stabilization techniques to prevent SCF convergence issues.
     
@@ -62,19 +62,19 @@ def stabilize_scf_convergence(mf, overlap_threshold: float = 5e6) -> None:
     mf : pyscf.scf object
         Mean field object (RHF, UHF, etc.)
     overlap_threshold : float
-        Threshold for overlap matrix condition number
+        Threshold for overlap matrix condition number (default: 1e7)
     """
     mol = mf.mol
     
     # Check overlap matrix condition
     condition_num, is_singular = check_overlap_condition_number(mol, overlap_threshold)
     
-    # Apply mild stabilization for elevated condition numbers (1e6 - 5e6)
+    # Apply mild stabilization for elevated condition numbers (1e6 - 1e7)
     if condition_num > 1e6:
         print("Applying SCF stabilization for elevated condition number...")
         
         # Lighter stabilization for marginally problematic cases
-        if condition_num < 5e6:
+        if condition_num < 1e7:
             mf.level_shift = 0.2  # Mild level shift
             mf.damp = 0.3         # Light damping
             mf.diis_space = min(10, mf.diis_space)  # Slightly reduce DIIS space
@@ -87,72 +87,20 @@ def stabilize_scf_convergence(mf, overlap_threshold: float = 5e6) -> None:
             mf.diis_start_cycle = 3  # Start DIIS later
             print(f"Applied aggressive stabilization: level_shift={mf.level_shift}, damp={mf.damp}")
         
-        # For any elevated condition number, relax initial convergence slightly
+        # For elevated condition numbers, relax initial convergence slightly but allow tight final convergence
         if hasattr(mf, 'conv_tol'):
             original_conv_tol = mf.conv_tol
-            mf.conv_tol = max(1e-8, original_conv_tol * 5)  # Relax by factor of 5
-            print(f"Relaxed initial SCF convergence: {original_conv_tol:.2e} → {mf.conv_tol:.2e}")
-            mf._original_conv_tol = original_conv_tol
-
-
-def try_alternative_basis_sets(atom_string: str, spin: int, original_basis: str = "aug-cc-pVTZ") -> Tuple[gto.Mole, str]:
-    """
-    Try alternative basis sets if the original one causes overlap matrix issues.
-    
-    Parameters:
-    -----------
-    atom_string : str
-        Molecular geometry string
-    spin : int
-        Spin multiplicity
-    original_basis : str
-        Original basis set that failed
-        
-    Returns:
-    --------
-    tuple[gto.Mole, str]
-        (molecule_object, successful_basis_name)
-    """
-    # Hierarchy of basis sets from most to least diffuse/problematic
-    basis_hierarchy = [
-        original_basis,
-        "cc-pVTZ",      # Remove augmentation
-        "cc-pVDZ",      # Smaller basis
-        "6-311++G**",   # Different family with diffuse
-        "6-311G**",     # Remove diffuse functions
-        "6-31+G*",      # Smaller with some diffuse
-        "6-31G*",       # Remove all diffuse functions
-        "STO-3G"        # Minimal basis (last resort)
-    ]
-    
-    # Use more permissive threshold for basis set selection
-    permissive_threshold = 1e7  # 10x more permissive for basis selection
-    
-    for basis in basis_hierarchy:
-        try:
-            print(f"Trying basis set: {basis}")
-            mol = gto.M(atom=atom_string, basis=basis, spin=spin, unit='Angstrom')
-            
-            # Check overlap condition with permissive threshold
-            condition_num, is_singular = check_overlap_condition_number(mol, threshold=permissive_threshold)
-            
-            if not is_singular:
-                if basis != original_basis:
-                    print(f"Successfully switched from {original_basis} to {basis}")
-                return mol, basis
+            # Only relax for more severe cases (> 5e6), allow moderate cases to use tight convergence
+            if condition_num > 5e6:
+                mf.conv_tol = max(1e-7, original_conv_tol * 5)  # Relax by factor of 5 for better convergence
+                print(f"Relaxed initial SCF convergence: {original_conv_tol:.2e} → {mf.conv_tol:.2e}")
+                mf._original_conv_tol = original_conv_tol
             else:
-                print(f"Basis {basis} shows severe overlap issues (condition = {condition_num:.2e})")
-                
-        except Exception as e:
-            print(f"Failed to build molecule with basis {basis}: {e}")
-            continue
-    
-    # If we get here, all basis sets failed
-    raise RuntimeError("All attempted basis sets show severe overlap matrix singularities. Check molecular geometry for problematic atom distances.")
-
+                print(f"Condition number {condition_num:.2e} acceptable for tight convergence")
+                mf._original_conv_tol = original_conv_tol
 
 def robust_scf_calculation(atom_string: str, spin: int, basis: str = "aug-cc-pVTZ", 
-                          target_conv_tol: float = 1e-12, max_cycle: int = 400) -> scf.hf.SCF:
+                          target_conv_tol: float = 1e-8, max_cycle: int = 400) -> scf.hf.SCF:
     """
     Perform a robust SCF calculation with automatic overlap matrix singularity handling.
     
@@ -165,7 +113,7 @@ def robust_scf_calculation(atom_string: str, spin: int, basis: str = "aug-cc-pVT
     basis : str
         Basis set name
     target_conv_tol : float
-        Target convergence tolerance
+        Target convergence tolerance (default: 1e-8, increased for stability)
     max_cycle : int
         Maximum SCF cycles
         
@@ -176,25 +124,22 @@ def robust_scf_calculation(atom_string: str, spin: int, basis: str = "aug-cc-pVT
     """
     print(f"Starting robust SCF calculation with basis {basis}")
     
-    # Try to build molecule with original basis
+    # Always use the user's specified basis - no fallback
     try:
         mol = gto.M(atom=atom_string, basis=basis, spin=spin, unit='Angstrom')
-        condition_num, is_singular = check_overlap_condition_number(mol, threshold=5e6)
+        condition_num, is_singular = check_overlap_condition_number(mol, threshold=1e7)
         
-        # Only switch basis for truly problematic cases (condition > 5e6)
         if is_singular:
-            print("Severe overlap matrix singularity detected. Trying alternative basis sets...")
-            mol, actual_basis = try_alternative_basis_sets(atom_string, spin, basis)
-            print(f"Using basis: {actual_basis}")
-        else:
-            actual_basis = basis
-            if condition_num > 1e6:
-                print(f"Elevated but manageable condition number ({condition_num:.2e}). Proceeding with stabilization.")
+            print(f"Overlap matrix singularity detected with basis {basis} (condition = {condition_num:.2e})")
+            print("Proceeding with user's basis and enhanced stabilization techniques...")
+        elif condition_num > 1e6:
+            print(f"Elevated but manageable condition number ({condition_num:.2e}). Proceeding with stabilization.")
+        
+        actual_basis = basis  # Always keep user's basis
             
     except Exception as e:
-        print(f"Failed to build molecule with {basis}: {e}")
-        print("Trying alternative basis sets...")
-        mol, actual_basis = try_alternative_basis_sets(atom_string, spin, basis)
+        print(f"Failed to build molecule with user's basis {basis}: {e}")
+        raise RuntimeError(f"Cannot proceed with user-specified basis {basis}: {e}")
     
     # Set up SCF calculation
     if spin == 0:
@@ -203,7 +148,7 @@ def robust_scf_calculation(atom_string: str, spin: int, basis: str = "aug-cc-pVT
         mf = scf.UHF(mol)
     
     # Apply stabilization techniques based on overlap condition
-    stabilize_scf_convergence(mf, overlap_threshold=5e6)
+    stabilize_scf_convergence(mf, overlap_threshold=1e7)
     
     # Set cycle limit
     mf.max_cycle = max_cycle
@@ -218,7 +163,7 @@ def robust_scf_calculation(atom_string: str, spin: int, basis: str = "aug-cc-pVT
         # Try even more aggressive stabilization
         mf.level_shift = 1.0
         mf.damp = 0.8
-        mf.conv_tol = 1e-6  # Very relaxed
+        mf.conv_tol = 1e-5  # Increased tolerance for SCF convergence
         mf.max_cycle = max_cycle * 2
         
         mf.run()

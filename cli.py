@@ -132,7 +132,6 @@ def compute(
 			)
 		except Exception as e:
 			typer.secho(f"CCSD(T) workflow failed: {e}", fg="red", err=True)
-			typer.secho("Try using --basis=STO-3G for a smaller basis set", fg="yellow")
 			raise typer.Exit(code=2)
 		µ_prime = float(µ_prime_val)
 		µ_double_prime = float(µ_double_prime_val)
@@ -220,7 +219,6 @@ def compute(
 				)
 			except Exception as e:
 				typer.secho(f"CCSD(T) workflow failed: {e}", fg="red", err=True)
-				typer.secho("Try using --basis=STO-3G for a smaller basis set", fg="yellow")
 				raise typer.Exit(code=2)
 			µ_prime = float(µ_prime_val)
 			µ_double_prime = float(µ_double_prime_val)

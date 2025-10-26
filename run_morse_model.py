@@ -15,13 +15,12 @@ from importlib import import_module
 import os
 
 MODULE_NAMES = [
-    "morse_solver.cli",
-    "morse_solver.main_morse_solver",
-    "morse_solver.derivatives_dipole_moment",
-    "morse_solver.run_morse_model",
-    "morse_solver.high_precision_arithmetic",
-    "morse_solver.pyscf_monkeypatch",
-    "morse_solver.normalize_bonds"
+    "cli",
+    "main_morse_solver",
+    "derivatives_dipole_moment",
+    "run_morse_model",
+    "high_precision_arithmetic",
+    "normalize_bonds"
 ]
 
 # If this script is executed with CWD inside the `morse_solver` package
