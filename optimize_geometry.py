@@ -4,6 +4,8 @@ from typing import Any
 import numpy as np
 from pyscf import gto, scf
 from tqdm import tqdm
+
+from cuda_adapter import build_ccsd_solver, build_grad_solver, build_scf_solver, describe_cuda_backend
 try:
 	# geomopt Berny solver for correlated gradients
 	from pyscf.geomopt import berny_solver
@@ -12,19 +14,22 @@ except Exception:
 
 # First we optimize the provided geometry 
 # Bond axis-related computations are outsourced to normalize_bonds.py
-def optimize_geometry_ccsd(coords_string: str, specified_spin: int, basis: str = "aug-cc-pVTZ", maxsteps: int = 50) -> str:
+def optimize_geometry_ccsd(coords_string: str, specified_spin: int, basis: str | None = None, maxsteps: int = 50) -> str:
 	"""
 	Run a CCSD geometry optimization (via CCSD gradients + Berny).
 
 	coords_string: either a path to a file or a multiline XYZ-style string (Element x y z)
 	specified_spin: spin multiplicity value
-	basis: basis set name (default: aug-cc-pVTZ for maximum CCSD(T) accuracy)
+	basis: basis set name supplied by the user (required)
 	maxsteps: maximum Berny steps
 
 	Returns an XYZ-style block string with optimized coordinates (same format as input).
 	
 	Uses CCSD(T) gradients for the most rigorous geometry optimization.
 	"""
+	if basis is None:
+		raise ValueError("optimize_geometry_ccsd requires a user-specified basis set")
+
 	# read coords
 	if os.path.isfile(coords_string):
 		with open(coords_string, 'r') as fh:
@@ -45,7 +50,7 @@ def optimize_geometry_ccsd(coords_string: str, specified_spin: int, basis: str =
 	positions = np.array(positions, dtype=float)
 
 	# Import stabilization module
-	from scf_stabilization import robust_scf_calculation, check_geometry_for_problems
+	from stabilization.scf_stabilization import robust_scf_calculation, check_geometry_for_problems
 	
 	# Build geometry string for stabilization functions
 	geometry_string = "\n".join(f"{a} {x} {y} {z}" for a, (x, y, z) in zip(atoms, positions))
@@ -53,10 +58,10 @@ def optimize_geometry_ccsd(coords_string: str, specified_spin: int, basis: str =
 	# Check geometry for potential problems
 	check_geometry_for_problems(geometry_string)
 	
-	# Run robust SCF calculation with automatic singularity handling
-	with tqdm(desc="Robust SCF for Geometry Optimization", unit="step", colour='blue') as pbar:
+	# Run SCF calculation with automatic singularity handling
+	with tqdm(desc="SCF for Geometry Optimization", unit="step", colour='blue') as pbar:
 		try:
-			mf = robust_scf_calculation(
+			mf, using_gpu = robust_scf_calculation(
 				atom_string=geometry_string,
 				spin=specified_spin,
 				basis=basis,
@@ -66,11 +71,14 @@ def optimize_geometry_ccsd(coords_string: str, specified_spin: int, basis: str =
 			pbar.update(1)
 			pbar.set_postfix(converged=mf.converged, energy=f"{mf.e_tot:.6f}")
 		except Exception as e:
-			raise RuntimeError(f"Robust SCF calculation failed: {e}")
+			raise RuntimeError(f"SCF calculation failed: {e}")
 	
 	if not mf.converged:
 		raise RuntimeError("High-precision SCF did not converge - cannot proceed with CCSD(T) optimization")
 	
+	# Use the SCF object for gradients (GPU if available)
+	mf_for_grad = mf
+
 	# Get molecule object from the mean field calculation
 	mol = mf.mol
 
@@ -114,8 +122,12 @@ def optimize_geometry_ccsd(coords_string: str, specified_spin: int, basis: str =
 		if cc is not None:
 			assert grad is not None, 'pyscf.grad not available'
 			print("Attempting CCSD geometry optimization...")
-			# use the lazily imported cc with maximum rigor convergence controls
-			mycc = cc.CCSD(mf)
+			# use the CUDA adapter so CCSD tries the GPU before falling back to CPU
+			mycc, using_gpu = build_ccsd_solver(mf, cpu_module=cc)
+			if using_gpu:
+				print(describe_cuda_backend())
+			else:
+				print("CUDA backend unavailable or disabled - running CCSD on CPU")
 		else:
 			print("CCSD not available - proceeding with SCF geometry optimization")
 			mycc = None
@@ -123,11 +135,18 @@ def optimize_geometry_ccsd(coords_string: str, specified_spin: int, basis: str =
 		if mycc is not None:
 			# Set maximum precision convergence criteria for ultimate CCSD(T) accuracy
 			mycc.conv_tol = 1e-10   # Maximum precision convergence
+			if hasattr(mycc, 'conv_tol_normt'):
+				mycc.conv_tol_normt = 1e-10 * 0.1
 			mycc.max_cycle = 200    # Many iterations for robust convergence
-			mycc.diis_space = 15    # Maximum DIIS space for optimal convergence
-			mycc.direct = True      # Use direct algorithm for better numerical accuracy
+			if hasattr(mycc, 'diis_space'):
+				mycc.diis_space = 15    # Maximum DIIS space for optimal convergence
+			if hasattr(mycc, 'diis_start_cycle'):
+				mycc.diis_start_cycle = 1
+			if hasattr(mycc, 'direct'):
+				mycc.direct = True      # Use direct algorithm for better numerical accuracy
 			
-			print(f"CCSD(T) optimization settings: conv_tol={mycc.conv_tol}, max_cycle={mycc.max_cycle}, diis_space={mycc.diis_space}")
+			diis_value = getattr(mycc, 'diis_space', 'n/a')
+			print(f"CCSD(T) optimization settings: conv_tol={mycc.conv_tol}, max_cycle={mycc.max_cycle}, diis_space={diis_value}")
 
 			# Run CCSD calculation with progress tracking
 			with tqdm(desc="CCSD for Geometry Optimization", unit="iter", colour='green') as pbar:
@@ -177,7 +196,10 @@ def optimize_geometry_ccsd(coords_string: str, specified_spin: int, basis: str =
 				print("Building UHF gradients (always using UHF to avoid CCSD gradient failures)...")
 				if grad is not None:
 					# Always use UHF gradients for reliable calculation
-					g = grad.UHF(mf)
+					g = build_grad_solver(mf_for_grad, spin=1, prefer_gpu=True)
+					# Ensure gradients work with Berny optimizer
+					if not hasattr(g, 'nuclear_grad_method'):
+						g.__class__.nuclear_grad_method = None
 				else:
 					raise RuntimeError("grad module is not available")
 				pbar.update(1)
@@ -207,7 +229,10 @@ def optimize_geometry_ccsd(coords_string: str, specified_spin: int, basis: str =
 						print("Attempting RHF gradient calculation as fallback...")
 						
 						# Try RHF gradients instead
-						g = grad.RHF(mf)
+						g = build_grad_solver(mf_for_grad, spin=0, prefer_gpu=True)
+						# Ensure gradients work with Berny optimizer
+						if not hasattr(g, 'nuclear_grad_method'):
+							g.__class__.nuclear_grad_method = None
 						grad_array = g.kernel()
 						
 						if isinstance(grad_array, np.ndarray) and grad_array.size > 0:

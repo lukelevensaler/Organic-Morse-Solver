@@ -5,12 +5,15 @@ warnings.filterwarnings("ignore", message="pkg_resources is deprecated", categor
 from pyscf import gto, scf
 import numpy as np
 import os
+from typing import Any, Optional
 # lazily import CC and grad inside functions to avoid static analysis issues
 cc = None
 grad = None
 from tqdm import tqdm
 from normalize_bonds import process_bond_displacements
 from optimize_geometry import optimize_geometry_ccsd
+from stabilization.ccsd_stabilization import CCSDRunResult, run_stabilized_ccsd
+from stabilization.ccsdt_stabilization import CCSDTResult, compute_triples_correction
 
 # ===== MAXIMUM PRECISION DIPOLE DERIVATIVE SOLVING WITH CCSD(T) =======
 #
@@ -29,52 +32,75 @@ from optimize_geometry import optimize_geometry_ccsd
 # We need to get the dipole moment vector of the optimized geometry
 # Optimization is done before this dipole computation can begin in its separate module
 
-def dipole_for_geometry(atom_string: str, spin: int, basis: str = "aug-cc-pVTZ", conv_tol: float = 1e-4, max_cycle: int = 100) -> np.ndarray:
+
+def dipole_for_geometry(atom_string: str, spin: int, basis: str | None = None, conv_tol: float = 5e-3, max_cycle: int = 150,
+					   enable_stabilized_attempt: bool = True,
+					   stabilized_direct: bool = True,
+					   stabilized_diis_space: int = 16,
+					   stabilized_max_cycle: int = 400,
+					   stabilized_conv_tol: float = 1e-3,
+					   stabilized_level_shift: float = 0.2) -> np.ndarray:
 	"""Return the molecular dipole vector (Debye) computed at CCSD(T) level.
 
-	This function uses full CCSD(T) method for accurate dipole moments, which is 
+	This function uses full CCSD(T) method for accurate dipole moments,
 	essential for high-accuracy overtone transition dipole calculations.
 
-	NOTE: Hartree refers to the atomic unit of energy, not the Hartree-Fock method, which we do not use.
-
-		Parameters:
-	-----------
+	Parameters
+	----------
 	atom_string : str
 		Molecular geometry in XYZ format
 	spin : int
 		Spin multiplicity
 	basis : str
-		Basis set (default: aug-cc-pVTZ for high accuracy)
+		User-specified basis set (required)
 	conv_tol : float
-		CCSD convergence tolerance (default: 1e-4 for relaxed convergence)
+		Initial CCSD convergence tolerance (default: 5e-3)
 	max_cycle : int
-		Maximum CCSD iterations (default: 100 for faster convergence)	Returns:
-	--------
+		Maximum CCSD iterations for the initial configuration (default: 150)
+	enable_stabilized_attempt : bool
+		Whether to attempt the stabilized CCSD run (default: True)
+	stabilized_direct : bool
+		Use direct algorithm in stabilized attempt (default: True)
+	stabilized_diis_space : int
+		DIIS space size for stabilized attempt (default: 16)
+	stabilized_max_cycle : int
+		Maximum cycles for stabilized attempt (default: 400)
+	stabilized_conv_tol : float
+		Target convergence tolerance for the stabilized run (default: 1e-3)
+	stabilized_level_shift : float
+		Level shift applied during the stabilized run (default: 0.2)
+
+	Returns
+	-------
 	np.ndarray
 		Dipole moment vector in Debye units
 	"""
+
+	if basis is None:
+		raise ValueError("dipole_for_geometry requires a user-specified basis set")
+
 	print(f"Computing CCSD(T) dipole for geometry with basis {basis}")
 	
 	# Import stabilization module
-	from scf_stabilization import robust_scf_calculation, check_geometry_for_problems
+	from stabilization.scf_stabilization import robust_scf_calculation, check_geometry_for_problems
 	
 	# Check geometry for potential problems
 	check_geometry_for_problems(atom_string)
 	
-	# Run robust SCF calculation with automatic singularity handling
-	with tqdm(desc="Robust SCF Convergence", unit="step", colour='blue') as pbar:
+	# Run SCF calculation with automatic singularity handling
+	with tqdm(desc="SCF Convergence", unit="step", colour='blue') as pbar:
 		try:
-			mf = robust_scf_calculation(
+			mf, using_gpu = robust_scf_calculation(
 				atom_string=atom_string, 
 				spin=spin, 
 				basis=basis,
-				target_conv_tol=1e-8,  # Increased tolerance for better convergence
-				max_cycle=300
+				target_conv_tol=1e-7,  # Loosened tolerance to help problematic systems converge
+				max_cycle=250
 			)
 			pbar.update(1)
 			pbar.set_postfix(converged=mf.converged, energy=f"{mf.e_tot:.6f}")
 		except Exception as e:
-			raise RuntimeError(f"Robust SCF calculation failed: {e}")
+			raise RuntimeError(f"SCF calculation failed: {e}")
 	
 	if not mf.converged:
 		raise RuntimeError("SCF did not converge to required precision - cannot proceed with high-accuracy CCSD(T)")
@@ -83,92 +109,35 @@ def dipole_for_geometry(atom_string: str, spin: int, basis: str = "aug-cc-pVTZ",
 	mol = mf.mol
 	
 	print(f"High-precision SCF converged for CCSD(T). Energy = {mf.e_tot:.12f} Hartree")
-	
-	# Import CC module
-	try:
-		from pyscf import cc
-	except ImportError:
-		raise RuntimeError("PySCF CC module not available - cannot compute CCSD(T) dipoles")
-	
-	# Set up CCSD calculation with progressive convergence strategy
-	mycc = cc.CCSD(mf)
-	
-	# Progressive convergence: start with loose tolerance and tighten if successful
-	convergence_levels = [
-		(1e-3, 50, 4),   # Very relaxed: conv_tol, max_cycle, diis_space
-		(1e-4, 100, 6),  # Standard relaxed
-		(1e-5, 150, 8),  # Moderate
-		(1e-6, 200, 10)  # Tight (if previous levels work)
-	]
-	
-	ccsd_converged = False
-	for i, (tol, cycles, diis) in enumerate(convergence_levels):
-		print(f"CCSD convergence attempt {i+1}: conv_tol={tol:.0e}, max_cycle={cycles}, diis_space={diis}")
-		
-		mycc.conv_tol = tol
-		mycc.max_cycle = cycles
-		mycc.diis_space = diis
-		mycc.direct = False   # Use indirect algorithm for better stability
-		
-		# Run CCSD calculation
-		with tqdm(desc=f"CCSD Attempt {i+1}", unit="step", colour='green') as pbar:
-			pbar.set_postfix(tol=f"{tol:.0e}", max_cycle=cycles)
-			try:
-				mycc.run()
-				pbar.update(1)
-				pbar.set_postfix(converged=mycc.converged, corr_energy=f"{mycc.e_corr:.6f}")
-				
-				if mycc.converged:
-					ccsd_converged = True
-					print(f"✅ CCSD converged at level {i+1} with tolerance {tol:.0e}")
-					break
-				else:
-					print(f"❌ CCSD failed to converge at level {i+1}")
-					
-			except Exception as e:
-				print(f"❌ CCSD calculation failed at level {i+1}: {e}")
-				continue
-	
-	if not ccsd_converged:
-		print("⚠️  All CCSD convergence attempts failed. Using SCF dipole as fallback...")
+
+	def scf_dipole_fallback(reason: str | None = None) -> np.ndarray:
+		"""Return SCF (or nuclear) dipole when CCSD cannot be obtained."""
+		if reason:
+			print(reason)
+		print("⚠️  Using SCF dipole as fallback...")
 		print("Note: For finite differences, SCF dipole accuracy is often sufficient")
-		
-		# Calculate SCF dipole as fallback
 		try:
 			dm1 = mf.make_rdm1()
 			dip_ints = mol.intor('int1e_r', comp=3)
 			
-			# Handle density matrix dimensions properly
 			if isinstance(dm1, tuple):
-				# UHF case: dm1 is (dm1_alpha, dm1_beta)
 				dm1_total = dm1[0] + dm1[1]
 			else:
-				# RHF case or already total density
 				dm1_total = dm1
 			
-			# Ensure proper dimensions for einsum
 			if len(dm1_total.shape) == 3:
-				# If dm1 has an extra spin dimension, sum over it
 				dm1_total = np.sum(dm1_total, axis=0)
 			
-			# Calculate electronic dipole with proper broadcasting
 			dip_elec = -np.einsum('xij,ij->x', dip_ints, dm1_total)
-			
-			# Nuclear contribution
 			charges = mol.atom_charges()
 			coords = mol.atom_coords()
 			dip_nuc = np.einsum('i,ix->x', charges, coords)
-			
-			# Total dipole
 			dipole_au = dip_elec + dip_nuc
 			au_to_debye = 2.541746473
 			dipole_debye = dipole_au * au_to_debye
-			
 			print(f"SCF dipole moment (fallback): {np.linalg.norm(dipole_debye):.8f} Debye")
 			return dipole_debye
-			
 		except Exception as scf_e:
-			# Final fallback - use molecular charges only
 			print(f"SCF dipole calculation failed: {scf_e}. Using nuclear dipole as final fallback...")
 			charges = mol.atom_charges()
 			coords = mol.atom_coords()
@@ -178,31 +147,47 @@ def dipole_for_geometry(atom_string: str, spin: int, basis: str = "aug-cc-pVTZ",
 			print(f"Nuclear dipole moment (final fallback): {np.linalg.norm(dipole_debye):.8f} Debye")
 			return dipole_debye
 	
-	# If we get here, CCSD has converged
+	# Import CC module to ensure availability before attempting CCSD
+	try:
+		from pyscf import cc  # noqa: F401
+	except ImportError:
+		raise RuntimeError("PySCF CC module not available - cannot compute CCSD(T) dipoles")
+
+	if not enable_stabilized_attempt:
+		return scf_dipole_fallback("⚠️  Stabilized CCSD attempt disabled by user.")
+
+	target_conv_tol = max(conv_tol, stabilized_conv_tol)
+	target_max_cycle = max(max_cycle, stabilized_max_cycle)
+
+	print("Running a single stabilized CCSD attempt with relaxed tolerance")
+	ccsd_result = run_stabilized_ccsd(
+		mf,
+		conv_tol=target_conv_tol,
+		max_cycle=target_max_cycle,
+		diis_space=int(stabilized_diis_space),
+		diis_start=1,
+		level_shift=float(stabilized_level_shift),
+		direct=bool(stabilized_direct),
+		desc="Stabilized CCSD Attempt",
+		colour='green',
+	)
+
+	if not ccsd_result.converged or ccsd_result.solver is None:
+		print("❌ Stabilized CCSD did not converge with relaxed settings")
+		ccsd_result.log_diagnostics()
+		return scf_dipole_fallback("⚠️  CCSD convergence unavailable - falling back to SCF dipole")
+
+	mycc = ccsd_result.solver
+	assert mycc is not None
 	print(f"✅ CCSD converged. Correlation energy = {mycc.e_corr:.8f} Hartree")
-	
-	# Attempt CCSD(T) triples correction for maximum accuracy
-	ccsd_t_available = False
-	with tqdm(desc="CCSD(T) Triples Correction", unit="step", colour='red') as pbar:
-		try:
-			if hasattr(mycc, 'ccsd_t') and mycc.converged:
-				pbar.set_postfix(status="computing")
-				print("Computing CCSD(T) triples correction for enhanced accuracy...")
-				e_t = mycc.ccsd_t()
-				pbar.update(1)
-				pbar.set_postfix(E_T=f"{e_t:.8f}")
-				print(f"✅ CCSD(T) triples correction: {e_t:.8f} Hartree")
-				total_energy = mycc.e_tot + e_t
-				print(f"Total CCSD(T) energy: {total_energy:.8f} Hartree")
-				ccsd_t_available = True
-			else:
-				print("⚠️  CCSD(T) triples correction not available or CCSD not converged - using CCSD dipole")
-				pbar.update(1)
-				pbar.set_postfix(status="skipped")
-		except Exception as e:
-			print(f"⚠️  CCSD(T) triples correction failed: {e} - using CCSD dipole (still accurate)")
-			pbar.update(1)
-			pbar.set_postfix(status="failed")
+
+	triples_result = compute_triples_correction(mycc, desc="CCSD(T) Triples Correction", colour='red')
+	triples_result.log_status()
+	triples_energy = triples_result.energy
+	ccsd_t_available = bool(triples_result.available and triples_energy is not None)
+	if ccsd_t_available and triples_energy is not None:
+		total_energy = mycc.e_tot + triples_energy
+		print(f"Total CCSD(T) energy: {total_energy:.8f} Hartree")
 	
 	# Calculate CCSD dipole moment
 	dipole_method = "CCSD(T)" if ccsd_t_available else "CCSD"
@@ -282,14 +267,19 @@ def dipole_for_geometry(atom_string: str, spin: int, basis: str = "aug-cc-pVTZ",
 				raise RuntimeError(f"All dipole calculation methods failed. CCSD: {e}, SCF: {scf_e}")
 
 # Finally we compute the actual µ dipole derivatives
-def compute_µ_derivatives(coords_string: str, specified_spin: int, delta: float = 0.005, basis: str = "aug-cc-pVTZ", atom_index: int = 0, axis: int = 2, bond_pair: tuple[int, int] | None = None, dual_bond_axes: str | None = None, m1: float | None = None, m2: float | None = None) -> tuple[float, float]:
+def compute_µ_derivatives(coords_string: str, specified_spin: int, delta: float = 0.005, basis: str | None = None, atom_index: int = 0, axis: int = 2, bond_pair: tuple[int, int] | None = None, dual_bond_axes: str | None = None, m1: float | None = None, m2: float | None = None,
+						enable_stabilized_attempt: bool = True,
+						stabilized_direct: bool = True,
+						stabilized_diis_space: int = 20,
+						stabilized_max_cycle: int = 400,
+						stabilized_conv_tol: float = 1e-7) -> tuple[float, float]:
 	"""
 	Compute first and second derivatives of the dipole using finite differences at CCSD(T) level.
 
 	coords_string: multiline string of fully numeric coordinates (Element x y z)
 	specified_spin: spin state for dipole calculation
 	delta: displacement magnitude (Å)
-	basis: quantum chemistry basis set
+	basis: quantum chemistry basis set supplied by the user (required)
 	atom_index: which atom to displace (0-based)
 	axis: which Cartesian axis to displace (0=x, 1=y, 2=z)
 	bond_pair: optional tuple of atom indices to define bond stretch direction
@@ -329,6 +319,9 @@ def compute_µ_derivatives(coords_string: str, specified_spin: int, delta: float
 	atom_plus = block_from_positions(pos_plus)
 	atom_minus = block_from_positions(pos_minus)
 
+	if basis is None:
+		raise ValueError("compute_µ_derivatives requires a user-specified basis set")
+
 	# compute dipoles at CCSD(T) level
 	print("Using CCSD(T) level for dipole moment calculations")
 	# Always use the user's requested basis directly - no fallback
@@ -343,15 +336,48 @@ def compute_µ_derivatives(coords_string: str, specified_spin: int, delta: float
 	# Main finite difference progress tracker
 	with tqdm(total=3, desc="Finite Difference CCSD(T) Calculations", unit="geom", colour='green') as pbar:
 		pbar.set_postfix(geometry="equilibrium")
-		µ0 = dipole_for_geometry(atom0, specified_spin, basis=ccsd_basis, conv_tol=tight_conv_tol, max_cycle=max_cycles)
+		µ0 = dipole_for_geometry(
+			atom0,
+			specified_spin,
+			basis=ccsd_basis,
+			conv_tol=tight_conv_tol,
+			max_cycle=max_cycles,
+			enable_stabilized_attempt=enable_stabilized_attempt,
+			stabilized_direct=stabilized_direct,
+			stabilized_diis_space=stabilized_diis_space,
+			stabilized_max_cycle=stabilized_max_cycle,
+			stabilized_conv_tol=stabilized_conv_tol,
+		)
 		pbar.update(1)
 		
 		pbar.set_postfix(geometry="+δ displacement")
-		µ_plus = dipole_for_geometry(atom_plus, specified_spin, basis=ccsd_basis, conv_tol=tight_conv_tol, max_cycle=max_cycles)
+		µ_plus = dipole_for_geometry(
+			atom_plus,
+			specified_spin,
+			basis=ccsd_basis,
+			conv_tol=tight_conv_tol,
+			max_cycle=max_cycles,
+			enable_stabilized_attempt=enable_stabilized_attempt,
+			stabilized_direct=stabilized_direct,
+			stabilized_diis_space=stabilized_diis_space,
+			stabilized_max_cycle=stabilized_max_cycle,
+			stabilized_conv_tol=stabilized_conv_tol,
+		)
 		pbar.update(1)
 		
 		pbar.set_postfix(geometry="-δ displacement")
-		µ_minus = dipole_for_geometry(atom_minus, specified_spin, basis=ccsd_basis, conv_tol=tight_conv_tol, max_cycle=max_cycles)
+		µ_minus = dipole_for_geometry(
+			atom_minus,
+			specified_spin,
+			basis=ccsd_basis,
+			conv_tol=tight_conv_tol,
+			max_cycle=max_cycles,
+			enable_stabilized_attempt=enable_stabilized_attempt,
+			stabilized_direct=stabilized_direct,
+			stabilized_diis_space=stabilized_diis_space,
+			stabilized_max_cycle=stabilized_max_cycle,
+			stabilized_conv_tol=stabilized_conv_tol,
+		)
 		pbar.update(1)
 		
 		pbar.set_postfix(geometry="completed")
@@ -378,14 +404,23 @@ def compute_µ_derivatives(coords_string: str, specified_spin: int, delta: float
 
 	return float(µ_prime_si), float(µ_double_prime_si)
 
-def compute_µ_derivatives_from_optimization(optimized_coords: np.ndarray, atoms: list[str], specified_spin: int, delta: float = 0.005, basis: str = "aug-cc-pVTZ", atom_index: int = 0, axis: int = 2, bond_pair: tuple[int, int] | None = None, dual_bond_axes: str | None = None, m1: float | None = None, m2: float | None = None) -> tuple[float, float]:
+def compute_µ_derivatives_from_optimization(optimized_coords: np.ndarray, atoms: list[str], specified_spin: int, delta: float = 0.005, basis: str | None = None, atom_index: int = 0, axis: int = 2, bond_pair: tuple[int, int] | None = None, dual_bond_axes: str | None = None, m1: float | None = None, m2: float | None = None,
+										   enable_stabilized_attempt: bool = True,
+										   stabilized_direct: bool = True,
+										   stabilized_diis_space: int = 20,
+										   stabilized_max_cycle: int = 400,
+										   stabilized_conv_tol: float = 1e-7) -> tuple[float, float]:
 	"""
 	Compute dipole derivatives using optimized geometry from morse solver.
 	
 	optimized_coords: numpy array of optimized atomic positions from geometry optimization
 	atoms: list of atomic symbols corresponding to coordinates
+	basis: user-specified basis set propagated from the workflow
 	... (other parameters same as compute_µ_derivatives)
 	"""
+	if basis is None:
+		raise ValueError("compute_µ_derivatives_from_optimization requires a user-specified basis set")
+
 	# Convert optimized geometry to coordinate string format
 	coord_lines = []
 	for i, atom in enumerate(atoms):
@@ -406,19 +441,33 @@ def compute_µ_derivatives_from_optimization(optimized_coords: np.ndarray, atoms
 		bond_pair=bond_pair,
 		dual_bond_axes=dual_bond_axes,
 		m1=m1,
-		m2=m2
+		m2=m2,
+		enable_stabilized_attempt=enable_stabilized_attempt,
+		stabilized_direct=stabilized_direct,
+		stabilized_diis_space=stabilized_diis_space,
+		stabilized_max_cycle=stabilized_max_cycle,
+		stabilized_conv_tol=stabilized_conv_tol,
 	)
 
-def full_pre_morse_dipole_workflow(initial_coords: str | np.ndarray, atoms: list[str], specified_spin: int, delta: float = 0.005, basis: str = "aug-cc-pVTZ", atom_index: int = 0, axis: int = 2, bond_pair: tuple[int, int] | None = None, dual_bond_axes: str | None = None, m1: float | None = None, m2: float | None = None, optimize_geometry: bool = True) -> tuple[float, float, np.ndarray]:
+def full_pre_morse_dipole_workflow(initial_coords: str | np.ndarray, atoms: list[str], specified_spin: int, delta: float = 0.005, basis: str | None = None, atom_index: int = 0, axis: int = 2, bond_pair: tuple[int, int] | None = None, dual_bond_axes: str | None = None, m1: float | None = None, m2: float | None = None, optimize_geometry: bool = True,
+								 enable_stabilized_attempt: bool = True,
+								 stabilized_direct: bool = True,
+								 stabilized_diis_space: int = 20,
+								 stabilized_max_cycle: int = 400,
+								 stabilized_conv_tol: float = 1e-7) -> tuple[float, float, np.ndarray]:
 	"""
 	Complete workflow: geometry optimization → dipole calculation → derivatives
 	
 	initial_coords: initial geometry (string or numpy array)
 	atoms: list of atomic symbols
+	basis: user-specified basis set (required)
 	optimize_geometry: whether to run geometry optimization first
 	
 	Returns: (µ_prime, µ_double_prime, optimized_coords)
 	"""
+	if basis is None:
+		raise ValueError("full_pre_morse_dipole_workflow requires a user-specified basis set")
+
 	print("Starting full Morse dipole derivative workflow")
 	
 	if optimize_geometry:
@@ -492,7 +541,14 @@ def full_pre_morse_dipole_workflow(initial_coords: str | np.ndarray, atoms: list
 		dual_bond_axes=dual_bond_axes,
 		m1=m1,
 		m2=m2
+		,
+		enable_stabilized_attempt=enable_stabilized_attempt,
+		stabilized_direct=stabilized_direct,
+		stabilized_diis_space=stabilized_diis_space,
+		stabilized_max_cycle=stabilized_max_cycle,
+		stabilized_conv_tol=stabilized_conv_tol,
 	)
+
 	
 	print("✅ Complete Morse dipole workflow finished successfully")
 	return µ_prime, µ_double_prime, optimized_coords

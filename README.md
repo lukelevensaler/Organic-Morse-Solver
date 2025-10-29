@@ -593,7 +593,7 @@ python3 \
 - `--specified-spin`: Spin multiplicity (0 for singlet, 1 for doublet, etc.)
 - `--bond`: Bond atom indices as "i,j" (0-based)
 - `--delta`: Finite difference displacement (Angstrom, default: 0.005)
-- `--basis`: Quantum chemistry basis set (default: aug-cc-pVTZ). Can be overridden with higher quality sets like aug-cc-pVQZ for maximum accuracy, or smaller sets like STO-3G for faster computation
+- `--basis`: Quantum chemistry basis set (default: aug-cc-pVTZ). Can be overridden with higher quality sets like aug-cc-pVQZ or  aug-cc-pV5Z for maximum accuracy.
 - `--fwhm`: Line width for peak extinction (cm⁻¹, default: 75.0)
 
 ### Interactive Mode (Step-by-Step)
@@ -720,7 +720,7 @@ The `--basis` flag allows you to control the quantum chemistry basis set used fo
 - Significantly longer computation time
 - Recommended for benchmarking or when highest accuracy is needed
 
-**Faster Computation:** `STO-3G` or `cc-pVDZ`
+**Faster Computation:** `cc-pVDZ`
 - Reduced accuracy but much faster
 - Useful for testing, debugging, or large systems
 - Not recommended for final results

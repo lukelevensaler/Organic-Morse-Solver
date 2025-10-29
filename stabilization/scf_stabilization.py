@@ -8,8 +8,8 @@ in PySCF calculations, which can cause SCF convergence failures.
 
 import numpy as np
 from pyscf import gto, scf
-import warnings
 from typing import Tuple, Optional
+from cuda_adapter import build_scf_solver, describe_cuda_backend
 
 
 def check_overlap_condition_number(mol: gto.Mole, threshold: float = 1e7) -> Tuple[float, bool]:
@@ -99,10 +99,10 @@ def stabilize_scf_convergence(mf, overlap_threshold: float = 1e7) -> None:
                 print(f"Condition number {condition_num:.2e} acceptable for tight convergence")
                 mf._original_conv_tol = original_conv_tol
 
-def robust_scf_calculation(atom_string: str, spin: int, basis: str = "aug-cc-pVTZ", 
-                          target_conv_tol: float = 1e-8, max_cycle: int = 400) -> scf.hf.SCF:
+def robust_scf_calculation(atom_string: str, spin: int, basis: Optional[str] = None, 
+                          target_conv_tol: float = 1e-8, max_cycle: int = 400) -> tuple[scf.hf.SCF, bool]:
     """
-    Perform a robust SCF calculation with automatic overlap matrix singularity handling.
+    Perform a SCF calculation with automatic overlap matrix singularity handling.
     
     Parameters:
     -----------
@@ -111,7 +111,7 @@ def robust_scf_calculation(atom_string: str, spin: int, basis: str = "aug-cc-pVT
     spin : int
         Spin multiplicity  
     basis : str
-        Basis set name
+        Basis set name provided by the user (required)
     target_conv_tol : float
         Target convergence tolerance (default: 1e-8, increased for stability)
     max_cycle : int
@@ -119,10 +119,13 @@ def robust_scf_calculation(atom_string: str, spin: int, basis: str = "aug-cc-pVT
         
     Returns:
     --------
-    pyscf.scf object
-        Converged SCF object
+    tuple[pyscf.scf.hf.SCF, bool]
+        Converged SCF object and whether GPU was used
     """
-    print(f"Starting robust SCF calculation with basis {basis}")
+    if not basis:
+        raise ValueError("robust_scf_calculation requires an explicit basis set from the user")
+
+    print(f"Starting SCF calculation with basis {basis}")
     
     # Always use the user's specified basis - no fallback
     try:
@@ -142,10 +145,11 @@ def robust_scf_calculation(atom_string: str, spin: int, basis: str = "aug-cc-pVT
         raise RuntimeError(f"Cannot proceed with user-specified basis {basis}: {e}")
     
     # Set up SCF calculation
-    if spin == 0:
-        mf = scf.RHF(mol)
+    mf, using_gpu = build_scf_solver(mol, spin=spin)
+    if using_gpu:
+        print(describe_cuda_backend())
     else:
-        mf = scf.UHF(mol)
+        print("CUDA backend unavailable or disabled - running SCF on CPU")
     
     # Apply stabilization techniques based on overlap condition
     stabilize_scf_convergence(mf, overlap_threshold=1e7)
@@ -190,7 +194,7 @@ def robust_scf_calculation(atom_string: str, spin: int, basis: str = "aug-cc-pVT
             # Accept the current convergence level rather than failing
     
     print(f"SCF converged successfully. Final energy = {mf.e_tot:.12f} Hartree")
-    return mf
+    return mf, using_gpu
 
 
 def check_geometry_for_problems(atom_string: str, min_distance: float = 0.5) -> None:

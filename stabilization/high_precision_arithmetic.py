@@ -239,10 +239,11 @@ def high_precision_S1_0n_log_space(n, a, lambda_val):
     else:
         sum_result = Decimal('0')
     
-    # Apply final prefactor in log space: log(|-N0*Nn/a^2|)
+    # Apply final prefactor in log space: log(|N0*Nn/a^2|)
     log_a_squared = 2 * a_dec.ln()
     log_abs_prefactor = log_N0 + log_Nn - log_a_squared
-    prefactor_sign = -1  # negative sign from the formula
+    # NOTE: Don't add negative sign here - it's already handled in main_morse_solver.py
+    prefactor_sign = 1  # Just the magnitude, sign handled externally
     
     # Final result: prefactor * sum_result
     if sum_result == 0:
