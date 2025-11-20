@@ -87,10 +87,11 @@ def dipole_for_geometry(atom_string: str, spin: int, basis: str | None = None, c
 	# Check geometry for potential problems
 	check_geometry_for_problems(atom_string)
 	
-	# Run SCF calculation with automatic singularity handling
+	# Run SCF calculation with automatic singularity handling (CPU-only)
+	# tqdm version in this environment expects 'colour' (British spelling).
 	with tqdm(desc="SCF Convergence", unit="step", colour='blue') as pbar:
 		try:
-			mf, using_gpu = robust_scf_calculation(
+			mf = robust_scf_calculation(
 				atom_string=atom_string, 
 				spin=spin, 
 				basis=basis,

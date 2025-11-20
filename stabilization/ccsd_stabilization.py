@@ -12,7 +12,6 @@ from typing import Any, Optional
 
 from tqdm import tqdm
 
-from cuda_adapter import build_ccsd_solver, describe_cuda_backend
 from pyscf import cc
 
 
@@ -58,11 +57,7 @@ def run_stabilized_ccsd(
     tighter runs.
     """
 
-    mycc, using_gpu = build_ccsd_solver(mf, cpu_module=cc)
-    if using_gpu:
-        print(describe_cuda_backend())
-    else:
-        print("CUDA backend unavailable or disabled - running CCSD on CPU")
+    mycc = cc.CCSD(mf)
     mycc.conv_tol = conv_tol
     if hasattr(mycc, "conv_tol_normt"):
         mycc.conv_tol_normt = conv_tol * conv_tol_normt_scale

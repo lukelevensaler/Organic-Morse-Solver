@@ -230,10 +230,6 @@ def compute(
 	# prompt for fwhm if still None
 	if fwhm is None:
 		fwhm = typer.prompt("Assumed FWHM of the overtone band in cm^-1", type=float, default=50.0)
-
-	if not (basis_set.startswith("aug-cc") or basis_set.startswith("cc")):
-		typer.secho("Error: non correlation-consistent basis sets are not supported for dipole derivative calculations. Use a Gaussian-type basis set like aug-cc-pVTZ.", fg="red", err=True)
-		raise typer.Exit(code=3)
  
 	# initialize globals (expects kg)
 	setup_globals(m_a_kg, m_b_kg, fundamental_frequency, observed_frequency, overtone_order)

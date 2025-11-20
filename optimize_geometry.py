@@ -3,9 +3,9 @@ import time
 from typing import Any
 import numpy as np
 from pyscf import gto, scf
+from pyscf import cc, grad
 from tqdm import tqdm
 
-from cuda_adapter import build_ccsd_solver, build_grad_solver, build_scf_solver, describe_cuda_backend
 try:
 	# geomopt Berny solver for correlated gradients
 	from pyscf.geomopt import berny_solver
@@ -58,10 +58,10 @@ def optimize_geometry_ccsd(coords_string: str, specified_spin: int, basis: str |
 	# Check geometry for potential problems
 	check_geometry_for_problems(geometry_string)
 	
-	# Run SCF calculation with automatic singularity handling
+	# Run SCF calculation with automatic singularity handling (CPU-only)
 	with tqdm(desc="SCF for Geometry Optimization", unit="step", colour='blue') as pbar:
 		try:
-			mf, using_gpu = robust_scf_calculation(
+			mf = robust_scf_calculation(  # Ensure this is CPU-only
 				atom_string=geometry_string,
 				spin=specified_spin,
 				basis=basis,
@@ -76,22 +76,13 @@ def optimize_geometry_ccsd(coords_string: str, specified_spin: int, basis: str |
 	if not mf.converged:
 		raise RuntimeError("High-precision SCF did not converge - cannot proceed with CCSD(T) optimization")
 	
-	# Use the SCF object for gradients (GPU if available)
+	# Use the SCF object for gradients (CPU-only)
 	mf_for_grad = mf
 
 	# Get molecule object from the mean field calculation
 	mol = mf.mol
 
-	# lazily import cc and grad to check for analytic gradient support
-	try:
-		from pyscf import cc as cc, grad as grad
-		print("Successfully imported PySCF cc and grad modules")
-	except Exception as import_e:
-		print(f"Failed to import PySCF modules: {import_e}")
-		cc = None
-		grad = None
-
-	# Check for required modules but allow fallback to SCF if CCSD fails
+	# Check for required modules but allow fallback to SCF if CCSD fails (CPU-only)
 	missing = []
 	if berny_solver is None:
 		missing.append('berny_solver (geometry optimizer)')
@@ -119,18 +110,8 @@ def optimize_geometry_ccsd(coords_string: str, specified_spin: int, basis: str |
 	# Run CCSD optimization and raise if it fails, or fallback to SCF
 	try:
 		# Check if CCSD is available
-		if cc is not None:
-			assert grad is not None, 'pyscf.grad not available'
-			print("Attempting CCSD geometry optimization...")
-			# use the CUDA adapter so CCSD tries the GPU before falling back to CPU
-			mycc, using_gpu = build_ccsd_solver(mf, cpu_module=cc)
-			if using_gpu:
-				print(describe_cuda_backend())
-			else:
-				print("CUDA backend unavailable or disabled - running CCSD on CPU")
-		else:
-			print("CCSD not available - proceeding with SCF geometry optimization")
-			mycc = None
+		print("Attempting CCSD geometry optimization (CPU-only)...")
+		mycc = cc.CCSD(mf)
 		
 		if mycc is not None:
 			# Set maximum precision convergence criteria for ultimate CCSD(T) accuracy
@@ -193,58 +174,26 @@ def optimize_geometry_ccsd(coords_string: str, specified_spin: int, basis: str |
 			
 			# Always use UHF gradients to avoid CCSD gradient issues
 			with tqdm(desc="Building UHF Gradients", unit="step", colour='cyan') as pbar:
-				print("Building UHF gradients (always using UHF to avoid CCSD gradient failures)...")
-				if grad is not None:
-					# Always use UHF gradients for reliable calculation
-					g = build_grad_solver(mf_for_grad, spin=1, prefer_gpu=True)
-					# Ensure gradients work with Berny optimizer
-					if not hasattr(g, 'nuclear_grad_method'):
-						g.__class__.nuclear_grad_method = None
-				else:
-					raise RuntimeError("grad module is not available")
+				print("Building UHF gradients (CPU-only)...")
+				g = grad.UHF(mf_for_grad) if specified_spin != 0 else grad.RHF(mf_for_grad)
+				# Ensure gradients work with Berny optimizer
+				if not hasattr(g, 'nuclear_grad_method'):
+					grad_cls: Any = g.__class__
+					grad_cls.nuclear_grad_method = None
 				pbar.update(1)
 			
 			# Test the gradient calculation with UHF gradients (reliable method)
-			with tqdm(desc="Testing UHF Gradient Calculation", unit="step", colour='yellow') as pbar:
-				print("Testing UHF gradient calculation...")
-				try:
-					print(f"Gradient object type: {type(g)}")
-					
-					# Test UHF gradient calculation
-					grad_array = g.kernel()
-					
-					# Validate the gradient array
-					if isinstance(grad_array, np.ndarray) and grad_array.size > 0:
-						print(f"UHF gradient test successful, shape: {grad_array.shape}")
-						print(f"UHF gradient norm: {np.linalg.norm(grad_array):.8f}")
-						pbar.update(1)
-						pbar.set_postfix(shape=f"{grad_array.shape}")
-					else:
-						raise RuntimeError(f"UHF gradients returned invalid result: {type(grad_array)}")
-						
-				except Exception as uhf_grad_e:
-					# Try RHF gradients as fallback
-					try:
-						print(f"UHF gradient calculation failed: {uhf_grad_e}")
-						print("Attempting RHF gradient calculation as fallback...")
-						
-						# Try RHF gradients instead
-						g = build_grad_solver(mf_for_grad, spin=0, prefer_gpu=True)
-						# Ensure gradients work with Berny optimizer
-						if not hasattr(g, 'nuclear_grad_method'):
-							g.__class__.nuclear_grad_method = None
-						grad_array = g.kernel()
-						
-						if isinstance(grad_array, np.ndarray) and grad_array.size > 0:
-							print(f"RHF gradient calculation successful, shape: {grad_array.shape}")
-							print(f"RHF gradient norm: {np.linalg.norm(grad_array):.8f}")
-							pbar.update(1)
-							pbar.set_postfix(shape=f"{grad_array.shape}")
-						else:
-							raise RuntimeError("RHF gradients also failed")
-							
-					except Exception as rhf_grad_e:
-						raise RuntimeError(f"All gradient calculation methods failed. UHF: {uhf_grad_e}, RHF: {rhf_grad_e}")
+			with tqdm(desc="Testing Gradient Calculation", unit="step", colour='yellow') as pbar:
+				print("Testing gradient calculation (CPU-only)...")
+				print(f"Gradient object type: {type(g)}")
+				grad_array = g.kernel()
+				if isinstance(grad_array, np.ndarray) and grad_array.size > 0:
+					print(f"Gradient test successful, shape: {grad_array.shape}")
+					print(f"Gradient norm: {np.linalg.norm(grad_array):.8f}")
+					pbar.update(1)
+					pbar.set_postfix(shape=f"{grad_array.shape}")
+				else:
+					raise RuntimeError(f"Gradients returned invalid result: {type(grad_array)}")
 						
 			# Narrow types for static analysis
 			assert berny_solver is not None

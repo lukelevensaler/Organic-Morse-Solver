@@ -2,6 +2,8 @@ import numpy as np
 import scipy.constants
 import scipy.special
 
+from stabilization import high_precision_arithmetic as hp
+
 # ===== BASICS ======
 # Note: compute all quantities at runtime via setup_globals(...) to avoid
 # referencing undefined names at import time (A, B, etc. were placeholders).
@@ -111,17 +113,11 @@ def N_v(v, a, λ):
 		print(f"N_v Debug: log_gamma({2*λ - v})={log_gamma_2λv:.6e}")
 		print(f"N_v Debug: log_N_v={log_N_v:.6e}")
 		
-		# Check if result is in representable range
-		if log_N_v > 700:  # exp(700) ≈ 10^304, near overflow
-			print(f"N_v Debug: N_v would overflow, returning large finite value")
-			return 1e100  # Large but finite
-		elif log_N_v < -700:  # exp(-700) ≈ 10^-304, near underflow
-			print(f"N_v Debug: N_v would underflow, returning small finite value")
-			return 1e-100  # Small but finite
-		else:
-			result = np.exp(log_N_v)
-			print(f"N_v Debug: N_v = {result:.6e}")
-			return result
+		# Use high-precision evaluation of N_v to avoid forced underflow/overflow
+		log_N_v_hp = hp.high_precision_log_N_v(v, float(a), float(λ))
+		N_v_hp = hp.high_precision_N_v(v, float(a), float(λ))
+		print(f"N_v Debug: high-precision log_N_v={log_N_v_hp}, N_v={N_v_hp}")
+		return float(N_v_hp)
 	else:
 		# Use direct computation for moderate values
 		result = np.sqrt(a * factor * scipy.special.gamma(v + 1) / scipy.special.gamma(2*λ - v))
@@ -332,41 +328,11 @@ def S1_0n(n, a, λ):
 	with np.errstate(invalid='ignore', divide='ignore', over='ignore'):
 		# Check if beta values are too large for direct gamma computation
 		if np.any(beta_m > 170):  # gamma(171) ≈ inf in double precision
-			print("S1_0n Debug: Using logarithmic arithmetic for large beta values")
-			# Use log-gamma and digamma for stable computation
-			log_G = scipy.special.loggamma(beta_m)
-			ψ = scipy.special.digamma(beta_m)
-			print(f"S1_0n Debug: log_G = {log_G}")
-			print(f"S1_0n Debug: ψ = {ψ}")
-			
-			# I1 = Gamma(beta) * (digamma(beta) - ln(2λ))
-			# In log space: log(I1) = log_Gamma(beta) + log(digamma(beta) - ln(2λ))
-			# But we need to handle the case where (digamma(beta) - ln(2λ)) could be negative
-			diff = ψ - log2λ
-			print(f"S1_0n Debug: ψ - log(2λ) = {diff}")
-			
-			# For large beta, digamma(beta) ≈ log(beta), so diff ≈ log(beta) - log(2λ) = log(beta/(2λ))
-			# If diff > 0, then I1 > 0; if diff < 0, then I1 < 0
-			sign = np.sign(diff)
-			log_abs_diff = np.log(np.abs(diff))
-			log_abs_I1 = log_G + log_abs_diff
-			
-			print(f"S1_0n Debug: sign = {sign}")
-			print(f"S1_0n Debug: log_abs_I1 = {log_abs_I1}")
-			
-			# Convert back to linear scale if possible, otherwise use asymptotic approximation
-			max_log = 700  # exp(700) is close to overflow limit
-			I1 = np.zeros_like(beta_m)
-			
-			finite_mask = log_abs_I1 < max_log
-			if np.any(finite_mask):
-				I1[finite_mask] = sign[finite_mask] * np.exp(log_abs_I1[finite_mask])
-			
-			# For terms that are still too large, we need to work in log space throughout
-			large_mask = ~finite_mask
-			if np.any(large_mask):
-				print(f"S1_0n Debug: {np.sum(large_mask)} terms still too large, keeping in log space")
-				# Don't set to zero - we'll handle the sum in log space below
+			print("S1_0n Debug: Using high-precision arithmetic for large beta values")
+			# Defer to the dedicated high‑precision implementation for this case
+			full_result = hp.high_precision_S1_0n(n, float(a), float(λ))
+			print(f"S1_0n Debug: High-precision S1_0n = {full_result:.6e}")
+			return full_result
 		else:
 			# Use direct computation for moderate beta values
 			G = scipy.special.gamma(beta_m)
@@ -382,35 +348,11 @@ def S1_0n(n, a, λ):
 		
 		print(f"S1_0n Debug: I1 after finite check = {I1}")
 		
-		# For the large terms, we need to compute the sum in log space
-		# terms = (-1)^m * c_m / m! * I1
-		# When I1 is huge, we need to work with log|terms| and signs separately
-		
-		if np.any(large_mask):
-			print("S1_0n Debug: Computing sum using high precision arithmetic for extreme terms")
-			
-			# Use high precision arithmetic for extreme cases
-			try:
-				from high_precision_arithmetic import high_precision_S1_0n
-				print("S1_0n Debug: Using high-precision arithmetic module")
-				# Call the full high precision function and extract just the sum part by dividing out prefactor
-				full_result = high_precision_S1_0n(n, a, λ)
-				current_prefactor = - (N0 * Nn) / (a ** 2)
-				if abs(current_prefactor) > 1e-300:
-					sum_terms = full_result / current_prefactor
-				else:
-					sum_terms = 0.0
-				print(f"S1_0n Debug: High precision result = {full_result:.6e}")
-			except ImportError:
-				print("S1_0n Debug: High-precision module not available, using fallback")
-				sum_terms = 0.0
-			
-		else:
-			# All terms fit in normal arithmetic
-			terms = ((-1.0) ** mm) * (cm / scipy.special.gamma(mm + 1)) * I1
-			sum_terms = np.sum(terms)
-		
-		print(f"S1_0n Debug: individual terms = {terms if not np.any(large_mask) else 'computed in log space'}")
+		# All terms fit in normal arithmetic
+		terms = ((-1.0) ** mm) * (cm / scipy.special.gamma(mm + 1)) * I1
+		sum_terms = np.sum(terms)
+	
+		print(f"S1_0n Debug: individual terms = {terms}")
 		print(f"S1_0n Debug: sum of terms = {sum_terms:.6e}")
 	
 	result = - (N0 * Nn) / (a ** 2) * sum_terms
@@ -459,35 +401,10 @@ def S2_0n(n, a, λ):
 	with np.errstate(invalid='ignore', divide='ignore', over='ignore'):
 		# Check if beta values are too large for direct gamma computation
 		if np.any(beta_m > 170):  # gamma(171) ≈ inf in double precision
-			print("S2_0n Debug: Using logarithmic arithmetic for large beta values")
-			# Use log-gamma and special functions for stable computation
-			log_G = scipy.special.loggamma(beta_m)
-			ψ = scipy.special.digamma(beta_m)
-			ψ1 = scipy.special.polygamma(1, beta_m)
-			
-			# I2 = Gamma(beta) * [ ψ(beta)^2 + ψ1(beta) - 2 ln(2λ) ψ(beta) + (ln(2λ))^2 ]
-			bracket = ψ ** 2 + ψ1 - 2.0 * log2λ * ψ + L2
-			print(f"S2_0n Debug: bracket term = {bracket}")
-			
-			# For large beta, we need to be careful about the sign and magnitude
-			sign = np.sign(bracket)
-			log_abs_bracket = np.log(np.abs(bracket))
-			log_abs_I2 = log_G + log_abs_bracket
-			
-			print(f"S2_0n Debug: log_abs_I2 = {log_abs_I2}")
-			
-			# Convert back to linear scale if possible
-			max_log = 700  # exp(700) is close to overflow limit
-			I2 = np.zeros_like(beta_m)
-			
-			finite_mask = log_abs_I2 < max_log
-			if np.any(finite_mask):
-				I2[finite_mask] = sign[finite_mask] * np.exp(log_abs_I2[finite_mask])
-			
-			# For terms that are still too large, keep in log space
-			large_mask = ~finite_mask
-			if np.any(large_mask):
-				print(f"S2_0n Debug: {np.sum(large_mask)} terms still too large, keeping in log space")
+			print("S2_0n Debug: Using high-precision arithmetic for large beta values")
+			full_result = hp.high_precision_S2_0n(n, float(a), float(λ))
+			print(f"S2_0n Debug: High-precision S2_0n = {full_result:.6e}")
+			return full_result
 		else:
 			# Use direct computation for moderate beta values
 			G = scipy.special.gamma(beta_m)
@@ -499,31 +416,11 @@ def S2_0n(n, a, λ):
 		
 		print(f"S2_0n Debug: I2 after finite check = {I2}")
 		
-		# Handle large terms with logarithmic arithmetic
-		if np.any(large_mask):
-			print("S2_0n Debug: Computing sum using high precision arithmetic for extreme terms")
-			
-			# Use high precision arithmetic for extreme cases
-			try:
-				from high_precision_arithmetic import high_precision_S2_0n
-				print("S2_0n Debug: Using high-precision arithmetic module")
-				# Call the full high precision function and extract just the sum part by dividing out prefactor
-				full_result = high_precision_S2_0n(n, a, λ)
-				current_prefactor = (N0 * Nn) / (a ** 3)
-				if abs(current_prefactor) > 1e-300:
-					sum_terms = full_result / current_prefactor
-				else:
-					sum_terms = 0.0
-				print(f"S2_0n Debug: High precision result = {full_result:.6e}")
-			except ImportError:
-				print("S2_0n Debug: High-precision module not available, using fallback")
-				sum_terms = 0.0
-		else:
-			# All terms fit in normal arithmetic
-			terms = ((-1.0) ** mm) * (cm / scipy.special.gamma(mm + 1)) * I2
-			sum_terms = np.sum(terms)
+		# All terms fit in normal arithmetic
+		terms = ((-1.0) ** mm) * (cm / scipy.special.gamma(mm + 1)) * I2
+		sum_terms = np.sum(terms)
 		
-		print(f"S2_0n Debug: individual terms = {terms if not np.any(large_mask) else 'computed in log space'}")
+		print(f"S2_0n Debug: individual terms = {terms}")
 		print(f"S2_0n Debug: sum of terms = {sum_terms:.6e}")
 	
 	result = (N0 * Nn) / (a ** 3) * sum_terms

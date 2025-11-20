@@ -10,9 +10,9 @@ import numpy as np
 from decimal import Decimal, getcontext
 import scipy.special
 
-# Set high precision - use a more reasonable precision for computational efficiency
-# We need enough precision to handle the cancellation but not so much that it becomes intractable
-getcontext().prec = 1000  # 1,000 decimal places should be sufficient for most cases
+# Set high precision - but keep it tractable for performance.
+# 200 digits is ample for the dynamic ranges we encounter here.
+getcontext().prec = 200
 
 def high_precision_log_gamma(x):
     """
@@ -90,67 +90,20 @@ def high_precision_polygamma(n, x):
         raise NotImplementedError(f"High precision polygamma not implemented for n={n}")
 
 def high_precision_alternating_morse_sum(log_magnitudes, signs, log_cm, log_factorial):
+    """Backward-compatible wrapper around :func:`high_precision_alternating_sum_from_logs`.
+
+    Older code passes separate log-arrays and signs. We now just assemble
+    log-terms and delegate to the more robust summation routine that works
+    purely in log-space and Decimal arithmetic, avoiding explicit
+    exponentiation of enormous intermediate values.
     """
-    Compute alternating Morse sum using high precision arithmetic.
-    
-    This computes: sum_m [signs[m] * exp(log_magnitudes[m] + log_cm[m] - log_factorial[m])]
-    
-    Parameters:
-    -----------
-    log_magnitudes : array
-        Logarithms of the |I_m| values
-    signs : array  
-        Signs of each term in the alternating series
-    log_cm : array
-        Logarithms of |c_m| coefficients
-    log_factorial : array
-        Logarithms of m! values
-    
-    Returns:
-    --------
-    float : The computed sum
-    """
-    print("HighPrec Debug: Using high-precision arithmetic for alternating sum")
-    print(f"HighPrec Debug: Working with {len(log_magnitudes)} terms")
-    
-    # Convert all inputs to high precision
-    terms = []
-    for i in range(len(log_magnitudes)):
-        # Compute log of absolute value of full term
-        log_abs_term = log_magnitudes[i] + log_cm[i] - log_factorial[i]
-        
-        print(f"HighPrec Debug: Term {i}: log_mag={log_magnitudes[i]:.6e}, log_cm={log_cm[i]:.6e}, log_fact={log_factorial[i]:.6e}")
-        print(f"HighPrec Debug: Term {i}: log_abs_term={log_abs_term:.6e}")
-        
-        # Convert to high precision and compute actual term value
-        log_abs_term_dec = Decimal(str(log_abs_term))
-        abs_term = log_abs_term_dec.exp()
-        
-        # Apply sign
-        term = abs_term * Decimal(str(signs[i]))
-        terms.append(term)
-        
-        print(f"HighPrec Debug: Term {i}: sign={signs[i]}, abs_term magnitude ≈ 10^{float(log_abs_term_dec / Decimal('2.302585092994046')):.1f}")
-    
-    # Sum all terms with high precision
-    total = Decimal('0')
-    for term in terms:
-        total += term
-    
-    print(f"HighPrec Debug: High precision sum = {total}")
-    
-    # Compute magnitude for debugging (handle zero and negative cases)
-    if total > 0:
-        log10_magnitude = float(total.ln() / Decimal('2.302585092994046'))
-        print(f"HighPrec Debug: Sum magnitude ≈ 10^{log10_magnitude:.1f}")
-    elif total < 0:
-        abs_total = -total
-        log10_magnitude = float(abs_total.ln() / Decimal('2.302585092994046'))
-        print(f"HighPrec Debug: Sum magnitude ≈ -10^{log10_magnitude:.1f}")
-    else:
-        print("HighPrec Debug: Sum is exactly zero")
-    
-    # Convert back to float for compatibility
+
+    log_terms = []
+    for lm, lc, lf in zip(log_magnitudes, log_cm, log_factorial):
+        log_terms.append(Decimal(str(lm + lc - lf)))
+
+    term_signs = [int(s) for s in signs]
+    total = high_precision_alternating_sum_from_logs(log_terms, term_signs)
     return float(total)
 
 def high_precision_S1_0n_log_space(n, a, lambda_val):
@@ -348,20 +301,91 @@ def high_precision_alternating_sum_from_logs(log_terms, term_signs):
     return total
 
 def high_precision_S2_0n(n, a, lambda_val):
+    """High-precision S2 = <ψ_0|Q^2|ψ_n>.
+
+    This mirrors the finite-sum definition used in :func:`S2_0n` but evaluates
+    all contributions in high precision so that extremely small but non-zero
+    values are preserved instead of underflowing to 0.
     """
-    Compute S2 = <ψ_0|Q^2|ψ_n> using high precision arithmetic.
-    Return a reasonable finite value instead of overflow.
-    """
+
     print(f"HighPrec S2_0n: n={n}, a={a:.6e}, λ={lambda_val:.6e}")
-    
-    # For extreme parameters, S2 is typically much smaller than S1
-    # and often negligible compared to the first-order dipole term
-    # Return a small but finite value
-    
-    # Estimate based on physical scaling - S2 is suppressed relative to S1
-    # by factors related to the vibrational displacement scale
-    result = 1e-18  # Small finite value in reasonable range
-    
-    print(f"HighPrec S2_0n: returning controlled finite result = {result}")
-    
-    return result
+
+    a_dec = Decimal(str(a))
+    lambda_dec = Decimal(str(lambda_val))
+    n_dec = Decimal(str(n))
+
+    alpha_n = 2 * lambda_dec - 2 * n_dec - 1
+
+    # Laguerre coefficients c_m via log-gamma formula (in high precision)
+    log_c_vals = []
+    c_signs: list[int] = []
+    for m in range(n + 1):
+        m_dec = Decimal(str(m))
+        log_c_m = (
+            high_precision_log_gamma(float(n_dec + alpha_n + 1))
+            - high_precision_log_gamma(float(n_dec - m_dec + 1))
+            - high_precision_log_gamma(float(alpha_n + m_dec + 1))
+        )
+        log_c_vals.append(log_c_m)
+        c_signs.append(1)
+
+    log_N0 = high_precision_log_N_v(0, float(a), float(lambda_val))
+    log_Nn = high_precision_log_N_v(n, float(a), float(lambda_val))
+
+    log2lambda = (2 * lambda_dec).ln()
+
+    log_terms: list[Decimal] = []
+    term_signs: list[int] = []
+
+    for m in range(n + 1):
+        m_dec = Decimal(str(m))
+        beta = 2 * lambda_dec - 5 + m_dec
+
+        if beta <= 0:
+            continue
+
+        # I_m^{(2)} in high precision: Gamma(beta)*[ ψ^2 + ψ1 - 2 ln(2λ) ψ + (ln(2λ))^2 ]
+        log_gamma_beta = high_precision_log_gamma(float(beta))
+        psi_beta = high_precision_digamma(float(beta))
+        psi1_beta = high_precision_polygamma(1, float(beta))
+
+        bracket = psi_beta * psi_beta + psi1_beta - 2 * log2lambda * psi_beta + log2lambda * log2lambda
+        if bracket == 0:
+            continue
+
+        I2_sign = 1 if bracket > 0 else -1
+        log_abs_bracket = bracket.ln() if bracket > 0 else (-bracket).ln()
+        log_abs_I2 = log_gamma_beta + log_abs_bracket
+
+        # m! via log-gamma in high precision
+        if m == 0:
+            log_m_fact = Decimal('0')
+        else:
+            log_m_fact = high_precision_log_gamma(float(m_dec + 1))
+
+        term_sign = ((-1) ** m) * c_signs[m] * I2_sign
+        log_abs_term = log_c_vals[m] + log_abs_I2 - log_m_fact
+
+        log_terms.append(log_abs_term)
+        term_signs.append(int(term_sign))
+
+    if not log_terms:
+        return 0.0
+
+    sum_dec = high_precision_alternating_sum_from_logs(log_terms, term_signs)
+    if sum_dec == 0:
+        return 0.0
+
+    # prefactor N0*Nn/a^3 in log-space
+    log_a3 = 3 * a_dec.ln()
+    log_abs_pref = log_N0 + log_Nn - log_a3
+
+    sign_sum = 1 if sum_dec > 0 else -1
+    log_abs_sum = sum_dec.ln() if sum_dec > 0 else (-sum_dec).ln()
+
+    total_sign = sign_sum
+    log_abs_total = log_abs_pref + log_abs_sum
+    total = total_sign * log_abs_total.exp()
+
+    print(f"HighPrec S2_0n: final result = {total}")
+    return float(total)

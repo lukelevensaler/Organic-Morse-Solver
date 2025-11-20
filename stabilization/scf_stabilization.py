@@ -9,7 +9,6 @@ in PySCF calculations, which can cause SCF convergence failures.
 import numpy as np
 from pyscf import gto, scf
 from typing import Tuple, Optional
-from cuda_adapter import build_scf_solver, describe_cuda_backend
 
 
 def check_overlap_condition_number(mol: gto.Mole, threshold: float = 1e7) -> Tuple[float, bool]:
@@ -100,7 +99,7 @@ def stabilize_scf_convergence(mf, overlap_threshold: float = 1e7) -> None:
                 mf._original_conv_tol = original_conv_tol
 
 def robust_scf_calculation(atom_string: str, spin: int, basis: Optional[str] = None, 
-                          target_conv_tol: float = 1e-8, max_cycle: int = 400) -> tuple[scf.hf.SCF, bool]:
+                          target_conv_tol: float = 1e-8, max_cycle: int = 400) -> scf.hf.SCF:
     """
     Perform a SCF calculation with automatic overlap matrix singularity handling.
     
@@ -120,7 +119,7 @@ def robust_scf_calculation(atom_string: str, spin: int, basis: Optional[str] = N
     Returns:
     --------
     tuple[pyscf.scf.hf.SCF, bool]
-        Converged SCF object and whether GPU was used
+        Converged SCF object
     """
     if not basis:
         raise ValueError("robust_scf_calculation requires an explicit basis set from the user")
@@ -144,12 +143,11 @@ def robust_scf_calculation(atom_string: str, spin: int, basis: Optional[str] = N
         print(f"Failed to build molecule with user's basis {basis}: {e}")
         raise RuntimeError(f"Cannot proceed with user-specified basis {basis}: {e}")
     
-    # Set up SCF calculation
-    mf, using_gpu = build_scf_solver(mol, spin=spin)
-    if using_gpu:
-        print(describe_cuda_backend())
+    # Set up SCF calculation (CPU-only)
+    if spin != 0:
+        mf = scf.UHF(mol)
     else:
-        print("CUDA backend unavailable or disabled - running SCF on CPU")
+        mf = scf.RHF(mol)
     
     # Apply stabilization techniques based on overlap condition
     stabilize_scf_convergence(mf, overlap_threshold=1e7)
@@ -194,8 +192,7 @@ def robust_scf_calculation(atom_string: str, spin: int, basis: Optional[str] = N
             # Accept the current convergence level rather than failing
     
     print(f"SCF converged successfully. Final energy = {mf.e_tot:.12f} Hartree")
-    return mf, using_gpu
-
+    return mf
 
 def check_geometry_for_problems(atom_string: str, min_distance: float = 0.5) -> None:
     """
