@@ -49,6 +49,10 @@ if app is None:
     sys.exit(2)
 
 if __name__ == "__main__":
+    # Force single-threaded BLAS/OMP for deterministic linear algebra.
+    os.environ.setdefault("OMP_NUM_THREADS", "1")
+    os.environ.setdefault("MKL_NUM_THREADS", "1")
+
     # Forward all args to the Typer app in cli.py 
     # (which has a compute function that runs the whole stack)
     app()
