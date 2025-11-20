@@ -12,28 +12,28 @@ app = typer.Typer(help="Morse overtone CLI for estimating ε_max from transition
  
 # helper list
 allowed_stretches_array = [
-    "C–H",
-    "C=O",
-    "C–N",
-    "N–H",
-    "O–H",
+	"C–H",
+	"C=O",
+	"C–N",
+	"N–H",
+	"O–H",
 ]
 
 @app.callback(invoke_without_command=True)
 def main_callback(ctx: typer.Context):
-    """Welcome message printed when running the CLI without subcommands.
+	"""Welcome message printed when running the CLI without subcommands.
 
-    Suggests running `stretches` to see allowed organic stretches.
-    """
-    if ctx.invoked_subcommand is None:
-        typer.echo("This CLI performs the following calulations to determine the molar extinction coefficent ε_(max) in M·cm^-1 for any organic molecule's IR (or NIR) overtone.")
-        typer.echo("Run 'python3 morse_solver.py stretches' to see the allowed organic stretches.")
+	Suggests running `stretches` to see allowed organic stretches.
+	"""
+	if ctx.invoked_subcommand is None:
+		typer.echo("This CLI performs the following calulations to determine the molar extinction coefficent ε_(max) in M·cm^-1 for any organic molecule's IR (or NIR) overtone.")
+		typer.echo("Run 'python3 morse_solver.py stretches' to see the allowed organic stretches.")
 
 @app.command("stretches", help="Print allowed organic stretches")
 def stretches():
-    typer.echo("Allowed organic stretches:")
-    for s in allowed_stretches_array:
-        typer.echo(f" - {s}")
+	typer.echo("Allowed organic stretches:")
+	for s in allowed_stretches_array:
+		typer.echo(f" - {s}")
 
 
 @app.command("compute", help="Compute ε_max from inputs")
@@ -43,8 +43,7 @@ def compute(
 	fundamental_frequency: Optional[float] = typer.Argument(None, help="Fundamental vibrational frequency (cm^-1). If omitted you will be prompted"), 
 	observed_frequency: Optional[float] = typer.Argument(None, help="Observed vibrational frequency (cm^-1). If omitted you will be prompted"), 
 	overtone_order: Optional[int] = typer.Argument(None, help="Overtone order (n=1 for first overtone). If omitted you will be prompted"), 
-	coords: Optional[str] = typer.Option(None, help="Cartesian coordinates (x,y,z) in Å for each atom's position in the chosen molecule's geometry. You must get such data from the CCDC Database (https://www.ccdc.cam.ac.uk/structures/), since that data is dierctly optimized to CCSD(T)-level quality."),
-	specified_spin: Optional[int] = typer.Option(None, help="Spin multiplicity. Required if coords provided."),
+	coords: Optional[str] = typer.Option(None, help="Cartesian coordinates (x,y,z) in Å for each atom's position in the chosen molecule's geometry. You must get such data from the CCDC Database (https://www.ccdc.cam.ac.uk/structures/), since that data is directly optimized to high-level ab initio quality"),
 	delta: Optional[float] = typer.Option(0.01, help="Finite-difference displacement magnitude in Å."),
 	bond: Optional[str] = typer.Option(None, help="Bond indices: 'n,x' for single bond or '(n,x);(a,x)' for dual bond axes with mass weighting."),
 	fwhm: Optional[float] = typer.Option(None, help="Assumed FWHM of the overtone band in cm^-1"),
@@ -56,6 +55,9 @@ def compute(
 	observed_frequency, overtone_order) are omitted the CLI will prompt for them
 	in sequence. Masses are entered in amu and converted to kg automatically.
 	"""
+	
+	# Intialize global constant specified_spin
+	specified_spin: Optional[int] = None
 
 	# prompt for missing required values
 	if amu_a is None:
@@ -105,8 +107,9 @@ def compute(
 				raise typer.BadParameter(f"Invalid bond indices: {e}")
 		# ensure delta is a float
 		delta_val = float(delta) if delta is not None else 0.01
-		# Show theory level information
-		typer.secho("Beginning CCSD(T) for ab initio molecular geometry optimization and dipole derivative calculation.", fg="green", bold=True)
+  
+		# Show theory level information 
+		typer.secho("Beginning SCF-only ab initio molecular geometry optimization and dipole derivative calculation.", fg="green", bold=True)
 		
 		# Parse atoms from coordinate string for the workflow
 		coord_lines = [ln.strip() for ln in coords.splitlines() if ln.strip()]
@@ -131,7 +134,7 @@ def compute(
 				optimize_geometry=True
 			)
 		except Exception as e:
-			typer.secho(f"CCSD(T) workflow failed: {e}", fg="red", err=True)
+			typer.secho(f"SCF workflow failed: {e}", fg="red", err=True)
 			raise typer.Exit(code=2)
 		µ_prime = float(µ_prime_val)
 		µ_double_prime = float(µ_double_prime_val)
@@ -185,8 +188,7 @@ def compute(
 		coords = "\n".join(lines)
 		# If coords were entered interactively, compute µ_prime/µ_double_prime using the same
 		# pipeline as the non-interactive path: prompt for spin (if needed), run
-		# CCSD optimization (will fail loudly if unavailable), then compute
-		# finite-difference dipole derivatives.
+		# SCF-based optimization, then compute finite-difference dipole derivatives.
 		if coords:
 			if specified_spin is None:
 				specified_spin = typer.prompt("Spin value", type=int)
@@ -218,7 +220,7 @@ def compute(
 					optimize_geometry=True
 				)
 			except Exception as e:
-				typer.secho(f"CCSD(T) workflow failed: {e}", fg="red", err=True)
+				typer.secho(f"SCF workflow failed: {e}", fg="red", err=True)
 				raise typer.Exit(code=2)
 			µ_prime = float(µ_prime_val)
 			µ_double_prime = float(µ_double_prime_val)

@@ -70,8 +70,8 @@ def pytest_configure(config):
 def pytest_collection_modifyitems(config, items):
     """Modify test collection to add markers based on test names"""
     for item in items:
-        # Mark tests with 'ccsd' in name as slow
-        if "ccsd" in item.name.lower():
+        # Mark tests with 'scf' in name as slow
+        if "scf" in item.name.lower():
             item.add_marker(pytest.mark.slow)
         
         # Mark tests with 'optimization' in name as computational

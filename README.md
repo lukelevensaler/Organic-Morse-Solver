@@ -38,8 +38,8 @@
 
 2. **Create the Conda Environment**
    
-   The repository includes an `environment.yml` file that specifies all required dependencies including:
-   - **PySCF**: Quantum chemistry calculations (CCSD(T) level theory)
+  The repository includes an `environment.yml` file that specifies all required dependencies including:
+  - **PySCF**: Quantum chemistry calculations (SCF-level theory in the current implementation)
    - **NumPy/SciPy**: Numerical computations and special functions
    - **Typer**: CLI framework
    - **PyBerny**: Geometry optimization
@@ -98,7 +98,7 @@ python3 run_morse_model.py compute --help
 
 # Part A: Optimizing Molecular Geometry
 
-This section describes the ab initio geometry optimization process using CCSD(T) level theory for maximum accuracy.
+This section describes the ab initio geometry optimization process, which is powered by Berny computations and Self-consistent field (SCF) evalutaions.
 
 ## A.1 Initial Geometry Setup
 - Input: Cartesian coordinates in XYZ format (Element x y z) in Angstrom units
@@ -106,39 +106,32 @@ This section describes the ab initio geometry optimization process using CCSD(T)
 - Build PySCF molecule object with specified basis set (default: aug-cc-pVTZ)
 
 ## A.2 High-Precision SCF Calculation
-Maximum precision SCF settings for CCSD(T) optimization:
-- Convergence tolerance: $1 \times 10^{-12}$ (extremely tight for CCSD(T) accuracy)
+Maximum precision SCF settings for geometry optimization:
+- Convergence tolerance: $1 \times 10^{-12}$ (extremely tight for SCF accuracy)
 - Maximum cycles: 400 (robust convergence)
 - DIIS space: 15 (large space for optimal convergence)
 
-## A.3 CCSD(T) Gradient-Based Optimization
-Uses analytic CCSD gradients with Berny solver for geometry optimization:
+## A.3 SCF Gradient-Based Optimization
+Uses analytic SCF gradients with Berny solver for geometry optimization:
 
-### CCSD Setup (Maximum Rigor):
+### SCF Setup (Deterministic Rigor):
 - Convergence tolerance: $1 \times 10^{-12}$ (extremely tight)
 - Maximum cycles: 200 (robust convergence)  
 - DIIS space: 15 (maximum space)
 - Direct algorithm: enabled for numerical accuracy
 
-### CCSD(T) Triples Correction:
-**Mandatory** triples correction for maximum computational rigor:
-$$
-E_{\text{CCSD(T)}} = E_{\text{CCSD}} + E_{(T)}
-$$
-where $E_{(T)}$ is the perturbative triples correction.
-
 ### Berny Geometry Optimization:
 - Maximum steps: 50 (user-configurable)
-- Uses analytic CCSD gradients for force evaluation
+- Uses analytic SCF gradients for force evaluation
 - Convergence on energy and gradient thresholds
 
-**Output**: Optimized Cartesian coordinates at CCSD(T) level
+**Output**: Optimized Cartesian coordinates at SCF level
 
 ---
 
 # Part B: Getting a Dipole Derivative from the Optimized Molecular Geometry
 
-This section describes the finite-difference calculation of dipole moment derivatives using CCSD(T) dipole moments.
+This section describes the finite-difference calculation of dipole moment derivatives using SCF dipole moments.
 
 ## B.1 Coordinate Displacement Strategy
 
@@ -179,25 +172,23 @@ $$
 
 **Primary displacement**: Use symmetric mode (larger projection typically).
 
-## B.2 CCSD(T) Dipole Moment Calculations
+## B.2 SCF Dipole Moment Calculations
 
 ### High-Precision Settings:
 - Basis set: aug-cc-pVTZ (or higher quality if specified)
 - SCF convergence: $1 \times 10^{-12}$ (extremely tight)
-- CCSD convergence: $1 \times 10^{-10}$ (very tight for derivatives)
 - Maximum cycles: 200 (robust convergence)
 
-### CCSD(T) Dipole Calculation Sequence:
+### SCF Dipole Calculation Sequence:
 1. **SCF Calculation**: High-precision self-consistent field
-2. **CCSD Correlation**: Coupled-cluster singles and doubles
-3. **CCSD(T) Triples**: Perturbative triples correction (mandatory)
-4. **Dipole Moment**: Computed from CCSD density matrices
+2. **SCF Solution**: Restricted or unrestricted Hartree–Fock
+3. **Dipole Moment**: Computed from SCF density matrices
 
 ### Dipole Moment Formula:
 $$
-\vec{\mu} = -\text{Tr}[\mathbf{D}^{\text{CCSD}} \cdot \hat{\vec{\mu}}] + \vec{\mu}_{\text{nuc}}
+\vec{\mu} = -\text{Tr}[\mathbf{D}^{\text{SCF}} \cdot \hat{\vec{\mu}}] + \vec{\mu}_{\text{nuc}}
 $$
-where $\mathbf{D}^{\text{CCSD}}$ is the CCSD density matrix and $\vec{\mu}_{\text{nuc}}$ is the nuclear contribution.
+where $\mathbf{D}^{\text{SCF}}$ is the SCF density matrix and $\vec{\mu}_{\text{nuc}}$ is the nuclear contribution.
 
 ## B.3 Finite Difference Derivatives
 
@@ -708,7 +699,7 @@ python3 run_morse_model.py compute \
 
 ### What Is Basis Set Selection?
 
-The `--basis` flag allows you to control the quantum chemistry basis set used for CCSD(T) calculations:
+The `--basis` flag allows you to control the quantum chemistry basis set used for SCF calculations:
 
 **Default (Recommended):** `aug-cc-pVTZ`
 - High accuracy for most organic molecules
@@ -733,7 +724,7 @@ python3 run_morse_model.py compute --basis aug-cc-pVQZ [other parameters...]
 ### Output
 
 The CLI provides detailed output including:
-- CCSD(T) geometry optimization results
+- SCF geometry optimization results
 - Computed dipole derivatives
 - Morse model parameters
 - Final molar extinction coefficient

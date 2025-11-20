@@ -14,9 +14,9 @@ except Exception:
 
 # First we optimize the provided geometry 
 # Bond axis-related computations are outsourced to normalize_bonds.py
-def optimize_geometry_ccsd(coords_string: str, specified_spin: int, basis: str | None = None, maxsteps: int = 50) -> str:
+def optimize_geometry_scf(coords_string: str, specified_spin: int, basis: str | None = None, maxsteps: int = 50) -> str:
 	"""
-	Run a CCSD geometry optimization (via CCSD gradients + Berny).
+	Run an SCF geometry optimization (via SCF gradients + Berny).
 
 	coords_string: either a path to a file or a multiline XYZ-style string (Element x y z)
 	specified_spin: spin multiplicity value
@@ -24,11 +24,10 @@ def optimize_geometry_ccsd(coords_string: str, specified_spin: int, basis: str |
 	maxsteps: maximum Berny steps
 
 	Returns an XYZ-style block string with optimized coordinates (same format as input).
-	
-	Uses CCSD(T) gradients for the most rigorous geometry optimization.
+
 	"""
 	if basis is None:
-		raise ValueError("optimize_geometry_ccsd requires a user-specified basis set")
+		raise ValueError("optimize_geometry_scf requires a user-specified basis set")
 
 	# read coords
 	if os.path.isfile(coords_string):
@@ -49,7 +48,7 @@ def optimize_geometry_ccsd(coords_string: str, specified_spin: int, basis: str |
 		positions.append([float(parts[1]), float(parts[2]), float(parts[3])])
 	positions = np.array(positions, dtype=float)
 
-	# Deterministic SCF-based optimization only: no CCSD/CCSD(T) is used.
+	# Deterministic SCF-based optimization
 	if berny_solver is None or grad is None:
 		msg = (
 			"PySCF berny solver or grad module not available; cannot perform geometry optimization.\n"

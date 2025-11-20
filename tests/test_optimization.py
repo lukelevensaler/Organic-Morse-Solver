@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 
 """
-Pytest module to verify that the fixed optimize_geometry_ccsd function works properly
+Pytest module to verify that the fixed optimize_geometry function (now SCF-based) works properly
 """
 
 import pytest
-from optimize_geometry import optimize_geometry_ccsd
+from optimize_geometry import optimize_geometry_scf as optimize_geometry_scf
 
 
 @pytest.fixture
@@ -24,7 +24,7 @@ class TestGeometryOptimization:
     def test_scf_optimization(self, test_molecule):
         """Test SCF geometry optimization"""
         # Run optimization with a smaller basis set for speed
-        result = optimize_geometry_ccsd(
+        result = optimize_geometry_scf(
             coords_string=test_molecule,
             specified_spin=0,  # Singlet (2S = 0, so S = 0)
             basis="sto-3g",    # Small basis for testing
@@ -37,10 +37,10 @@ class TestGeometryOptimization:
         assert "O" in result, "Result should contain oxygen atom"
         assert "H" in result, "Result should contain hydrogen atoms"
 
-    def test_ccsd_optimization(self, test_molecule):
-        """Test CCSD geometry optimization"""
+    def test_scf_optimization_label_only(self, test_molecule):
+        """Test SCF geometry optimization"""
         # Run optimization with a smaller basis set for speed
-        result = optimize_geometry_ccsd(
+        result = optimize_geometry_scf(
             coords_string=test_molecule,
             specified_spin=0,  # Singlet (2S = 0, so S = 0)
             basis="sto-3g",    # Small basis for testing
@@ -48,7 +48,7 @@ class TestGeometryOptimization:
         )
         
         # Assert that we get a result back
-        assert result is not None, "CCSD optimization should return a result"
+        assert result is not None, "SCF optimization should return a result"
         assert isinstance(result, str), "Result should be a string containing coordinates"
         assert "O" in result, "Result should contain oxygen atom"
         assert "H" in result, "Result should contain hydrogen atoms"
@@ -58,7 +58,7 @@ class TestGeometryOptimization:
         invalid_coords = "This is not a valid coordinate string"
         
         with pytest.raises(Exception):
-            optimize_geometry_ccsd(
+            optimize_geometry_scf(
                 coords_string=invalid_coords,
                 specified_spin=0,
                 basis="sto-3g",
@@ -70,7 +70,7 @@ class TestGeometryOptimization:
         # This might not raise an exception but could give unexpected results
         # We'll test that it at least doesn't crash
         try:
-            result = optimize_geometry_ccsd(
+            result = optimize_geometry_scf(
                 coords_string=test_molecule,
                 specified_spin=100,  # Very high spin value
                 basis="sto-3g",
@@ -89,7 +89,7 @@ class TestLongRunningOptimization:
     
     def test_optimization_convergence(self, test_molecule):
         """Test that optimization actually converges (slower test)"""
-        result = optimize_geometry_ccsd(
+        result = optimize_geometry_scf(
             coords_string=test_molecule,
             specified_spin=0,
             basis="sto-3g",

@@ -10,7 +10,7 @@ import os
 from typing import Any, Optional
 from tqdm import tqdm
 from normalize_bonds import process_bond_displacements
-from optimize_geometry import optimize_geometry_ccsd
+from optimize_geometry import optimize_geometry_scf
 
 # NOTE: For deterministic behaviour we lock all stochastic sources here.
 # This ensures that repeated runs with identical inputs produce the
@@ -18,19 +18,17 @@ from optimize_geometry import optimize_geometry_ccsd
 np.random.seed(12345)
 random.seed(12345)
 
-# ===== MAXIMUM PRECISION DIPOLE DERIVATIVE SOLVING WITH CCSD(T) =======
+# ===== MAXIMUM PRECISION DIPOLE DERIVATIVE SOLVING WITH SCF ONLY =======
 #
-# This module implements the most computationally rigorous approach possible:
-# - Dipole moment computed at full CCSD(T) level
-# - Extremely tight SCF convergence (1e-12) used for required CCSD prerequisite
-# - High-precision CCSD convergence (1e-9 to 1e-10) used for required CCSD(T) prerequisite
-# - Mandatory CCSD(T) triples correction for all calculations
-# - High-quality correlation-consistent basis sets (aug-cc-pVTZ default)
-# - Optimized DIIS spaces and maximum iteration counts
-# - Direct algorithms for best numerical accuracy
+# This module now implements a deterministic SCF-only approach:
+# - Dipole moment computed at SCF level (since SCF excels at reproducibility)
+# - Tight but practical SCF convergence used for all prerequisite calculations
+# - No triples corrections or correlated densities are involved
+# - High-quality basis sets are still supported via the user-specified basis
+# - Deterministic settings (fixed seeds, single SCF path) for reproducibility
 #
-# This ensures maximum computational rigor for overtone spectroscopy applications
-# where dipole derivative accuracy is critical.
+# This ensures maximum numerical stability and determinism for overtone
+# spectroscopy applications where dipole derivative reproducibility is critical.
 
 # We need to get the dipole moment vector of the optimized geometry
 # Optimization is done before this dipole computation can begin in its separate module
@@ -47,10 +45,9 @@ def dipole_for_geometry(atom_string: str, spin: int, basis: str | None = None,
 	"""Return the molecular dipole vector (Debye) **at SCF level only**.
 
 	To guarantee deterministic behaviour and avoid run-to-run variation
-	from CCSD(T) convergence issues, this implementation *always* uses
-	SCF densities for the dipole and does **not** attempt any correlated
-	(CCSD/CCSD(T)) dipole evaluation. Geometry optimization may still use
-	CCSD where available, but the dipole itself is SCF-only.
+	from correlated-method convergence issues, this implementation *always*
+	uses SCF densities for the dipole evaluation. Geometry optimization is also
+	implemented with SCF-only gradients.
 
 	Parameters
 	----------
@@ -61,21 +58,21 @@ def dipole_for_geometry(atom_string: str, spin: int, basis: str | None = None,
 	basis : str
 		User-specified basis set (required)
 	conv_tol : float
-		Initial CCSD convergence tolerance (default: 5e-3)
+		SCF convergence tolerance (default: 1e-9)
 	max_cycle : int
-		Maximum CCSD iterations for the initial configuration (default: 150)
+		Maximum SCF iterations for the initial configuration (default: 300)
 	enable_stabilized_attempt : bool
-		Whether to attempt the stabilized CCSD run (default: True)
+		Legacy parameter (no effect in SCF-only implementation)
 	stabilized_direct : bool
-		Use direct algorithm in stabilized attempt (default: True)
+		Legacy parameter (no effect in SCF-only implementation)
 	stabilized_diis_space : int
-		DIIS space size for stabilized attempt (default: 16)
+		Legacy parameter (no effect in SCF-only implementation)
 	stabilized_max_cycle : int
-		Maximum cycles for stabilized attempt (default: 400)
+		Legacy parameter (no effect in SCF-only implementation)
 	stabilized_conv_tol : float
-		Target convergence tolerance for the stabilized run (default: 1e-3)
+		Legacy parameter (no effect in SCF-only implementation)
 	stabilized_level_shift : float
-		Level shift applied during the stabilized run (default: 0.2)
+		Legacy parameter (no effect in SCF-only implementation)
 
 	Returns
 	-------
@@ -110,10 +107,8 @@ def dipole_for_geometry(atom_string: str, spin: int, basis: str | None = None,
 	
 	print(f"High-precision SCF converged for dipole evaluation. Energy = {mf.e_tot:.12f} Hartree")
 
-	# From this point onward we *always* compute the dipole from the SCF
-	# density matrix. This removes CCSD(T) as a source of
-	# non-determinism and guarantees a single, well-defined
-	# computational path per geometry.
+	# From this point onward we compute the dipole from the SCF
+	# density matrix.
 
 	try:
 		dm1 = mf.make_rdm1()
@@ -154,7 +149,7 @@ def compute_µ_derivatives(coords_string: str, specified_spin: int, delta: float
 						stabilized_max_cycle: int = 400,
 						stabilized_conv_tol: float = 1e-7) -> tuple[float, float]:
 	"""
-	Compute first and second derivatives of the dipole using finite differences at CCSD(T) level.
+	Compute first and second derivatives of the dipole using finite differences at SCF level.
 
 	coords_string: multiline string of fully numeric coordinates (Element x y z)
 	specified_spin: spin state for dipole calculation
@@ -202,12 +197,12 @@ def compute_µ_derivatives(coords_string: str, specified_spin: int, delta: float
 	if basis is None:
 		raise ValueError("compute_µ_derivatives requires a user-specified basis set")
 
-	# compute dipoles at SCF level (CCSD(T) removed for determinism)
+	# compute dipoles at SCF level
 	print("Using SCF level for dipole moment calculations")
 	# Always use the user's requested basis directly - no fallback
-	ccsd_basis = basis  # Use the requested basis directly for maximum rigor
+	scf_basis = basis  # Use the requested basis directly for maximum rigor
 	
-	print(f"SCF basis set: {ccsd_basis}")
+	print(f"SCF basis set: {scf_basis}")
 	
 	# Use relaxed convergence for finite difference derivatives (since result is zeroed)
 	tight_conv_tol = 1e-4   # Relaxed precision for speed since derivative is zeroed
@@ -219,7 +214,7 @@ def compute_µ_derivatives(coords_string: str, specified_spin: int, delta: float
 		µ0 = dipole_for_geometry(
 			atom0,
 			specified_spin,
-			basis=ccsd_basis,
+			basis=scf_basis,
 			conv_tol=tight_conv_tol,
 			max_cycle=max_cycles,
 			enable_stabilized_attempt=enable_stabilized_attempt,
@@ -234,7 +229,7 @@ def compute_µ_derivatives(coords_string: str, specified_spin: int, delta: float
 		µ_plus = dipole_for_geometry(
 			atom_plus,
 			specified_spin,
-			basis=ccsd_basis,
+			basis=scf_basis,
 			conv_tol=tight_conv_tol,
 			max_cycle=max_cycles,
 			enable_stabilized_attempt=enable_stabilized_attempt,
@@ -249,7 +244,7 @@ def compute_µ_derivatives(coords_string: str, specified_spin: int, delta: float
 		µ_minus = dipole_for_geometry(
 			atom_minus,
 			specified_spin,
-			basis=ccsd_basis,
+			basis=scf_basis,
 			conv_tol=tight_conv_tol,
 			max_cycle=max_cycles,
 			enable_stabilized_attempt=enable_stabilized_attempt,
@@ -351,9 +346,9 @@ def full_pre_morse_dipole_workflow(initial_coords: str | np.ndarray, atoms: list
 	print("Starting full Morse dipole derivative workflow")
 	
 	if optimize_geometry:
-		print("Step 1: CCSD(T) geometry optimization")
+		print("Step 1: SCF geometry optimization")
 		
-		# Convert initial coords to string format for optimize_geometry_ccsd
+		# Convert initial coords to string format for optimize_geometry_scf
 		if isinstance(initial_coords, np.ndarray):
 			# Convert numpy array back to coordinate string
 			coord_lines = []
@@ -366,7 +361,7 @@ def full_pre_morse_dipole_workflow(initial_coords: str | np.ndarray, atoms: list
 		
 		try:
 			# Call the actual geometry optimization function
-			optimized_coords_string = optimize_geometry_ccsd(
+			optimized_coords_string = optimize_geometry_scf(
 				coords_string=coords_string,
 				specified_spin=specified_spin,
 				basis=basis
@@ -380,7 +375,7 @@ def full_pre_morse_dipole_workflow(initial_coords: str | np.ndarray, atoms: list
 				optimized_positions.append([float(parts[1]), float(parts[2]), float(parts[3])])
 			optimized_coords = np.array(optimized_positions)
 
-			print("✅ CCSD(T) geometry optimization completed successfully")
+			print("✅ SCF geometry optimization completed successfully")
 
 		except Exception as e:
 			print(f"⚠️ Geometry optimization failed: {e}")
@@ -408,7 +403,7 @@ def full_pre_morse_dipole_workflow(initial_coords: str | np.ndarray, atoms: list
 		else:
 			optimized_coords = initial_coords.copy()
 	
-	print("Step 2: Computing CCSD(T) dipole derivatives from optimized geometry")
+	print("Step 2: Computing SCF dipole derivatives from optimized geometry")
 	µ_prime, µ_double_prime = compute_µ_derivatives_from_optimization(
 		optimized_coords=optimized_coords,
 		atoms=atoms,
