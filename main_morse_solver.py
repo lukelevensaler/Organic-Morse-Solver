@@ -287,79 +287,10 @@ def S1_0n(n, a, λ):
 	S1 = -N0*Nn / a^2 * sum_{m=0}^n (-1)^m (c_m / m!) I_m^{(1)}
 	I_m^{(1)} = Gamma(beta) * ψ(beta) - ln(2λ) * Gamma(beta), with beta = 2λ-5+m
 	"""
-	print(f"S1_0n Debug: n={n}, a={a:.6e}, λ={λ:.6e}")
-	
-	alpha_n = 2 * λ - 2 * n - 1
-	print(f"S1_0n Debug: alpha_n = {alpha_n:.6e}")
-	
-	c = laguerre_c_series(n, alpha_n)
-	print(f"S1_0n Debug: laguerre coefficients c = {c}")
-	
-	N0 = N_v(0, a, λ)
-	Nn = N_v(n, a, λ)
-	print(f"S1_0n Debug: N0 = {N0:.6e}, Nn = {Nn:.6e}")
-	
-	m = np.arange(0, n+1)
-	beta = 2 * λ - 5 + m
-	print(f"S1_0n Debug: beta values = {beta}")
-	
-	# mask out non-positive beta to avoid Gamma singularities
-	mask = beta > 0
-	print(f"S1_0n Debug: mask = {mask}, any valid beta? {np.any(mask)}")
-	
-	if not np.any(mask):
-		print("S1_0n Debug: No valid beta values > 0, returning 0.0")
-		return 0.0
-	
-	beta_m = beta[mask]
-	cm = c[mask]
-	mm = m[mask]
-	print(f"S1_0n Debug: filtered beta_m = {beta_m}")
-	print(f"S1_0n Debug: filtered cm = {cm}")
-	
-	# compute special functions safely; guard against non-positive λ
-	if λ <= 0:
-		raise ValueError("λ must be positive for Morse integrals")
-	
-	# For large beta values, use logarithmic arithmetic to avoid overflow
-	log2λ = np.log(2.0 * λ)
-	print(f"S1_0n Debug: log(2λ) = {log2λ:.6e}")
-	
-	with np.errstate(invalid='ignore', divide='ignore', over='ignore'):
-		# Check if beta values are too large for direct gamma computation
-		if np.any(beta_m > 170):  # gamma(171) ≈ inf in double precision
-			print("S1_0n Debug: Using high-precision arithmetic for large beta values")
-			# Defer to the dedicated high‑precision implementation for this case
-			full_result = hp.high_precision_S1_0n(n, float(a), float(λ))
-			print(f"S1_0n Debug: High-precision S1_0n = {full_result:.6e}")
-			return full_result
-		else:
-			# Use direct computation for moderate beta values
-			G = scipy.special.gamma(beta_m)
-			ψ = scipy.special.digamma(beta_m)
-			print(f"S1_0n Debug: G = {G}")
-			print(f"S1_0n Debug: ψ = {ψ}")
-			
-			I1 = G * (ψ - log2λ)
-			print(f"S1_0n Debug: I1 before finite check = {I1}")
-			
-			# replace any non-finite contributions with zero so sum is stable
-			I1 = np.where(np.isfinite(I1), I1, 0.0)
-		
-		print(f"S1_0n Debug: I1 after finite check = {I1}")
-		
-		# All terms fit in normal arithmetic
-		terms = ((-1.0) ** mm) * (cm / scipy.special.gamma(mm + 1)) * I1
-		sum_terms = np.sum(terms)
-	
-		print(f"S1_0n Debug: individual terms = {terms}")
-		print(f"S1_0n Debug: sum of terms = {sum_terms:.6e}")
-	
-	result = - (N0 * Nn) / (a ** 2) * sum_terms
-	print(f"S1_0n Debug: final prefactor = {- (N0 * Nn) / (a ** 2):.6e}")
-	print(f"S1_0n Debug: final result = {result:.6e}")
-	
-	return result
+	# For all parameter regimes, use the dedicated high-precision
+	# implementation as the single source of truth. It internally
+	# handles both moderate and extreme cases robustly.
+	return hp.high_precision_S1_0n(n, float(a), float(λ))
 
 
 def S2_0n(n, a, λ):
@@ -370,64 +301,9 @@ def S2_0n(n, a, λ):
 	I_m^{(2)} = Gamma(beta) * [ ψ(beta)^2 + ψ1(beta) - 2 ln(2λ) ψ(beta) + (ln(2λ))^2 ]
 	where beta = 2λ-5+m
 	"""
-	print(f"S2_0n Debug: n={n}, a={a:.6e}, λ={λ:.6e}")
-	
-	alpha_n = 2 * λ - 2 * n - 1
-	c = laguerre_c_series(n, alpha_n)
-	N0 = N_v(0, a, λ)
-	Nn = N_v(n, a, λ)
-	m = np.arange(0, n+1)
-	beta = 2 * λ - 5 + m
-	print(f"S2_0n Debug: beta values = {beta}")
-	
-	mask = beta > 0
-	print(f"S2_0n Debug: mask = {mask}, any valid beta? {np.any(mask)}")
-	
-	if not np.any(mask):
-		print("S2_0n Debug: No valid beta values > 0, returning 0.0")
-		return 0.0
-		
-	beta_m = beta[mask]
-	cm = c[mask]
-	mm = m[mask]
-	
-	# compute special functions safely; guard against non-positive λ
-	if λ <= 0:
-		raise ValueError("λ must be positive for Morse integrals")
-	
-	log2λ = np.log(2.0 * λ)
-	L2 = (log2λ) ** 2
-	
-	with np.errstate(invalid='ignore', divide='ignore', over='ignore'):
-		# Check if beta values are too large for direct gamma computation
-		if np.any(beta_m > 170):  # gamma(171) ≈ inf in double precision
-			print("S2_0n Debug: Using high-precision arithmetic for large beta values")
-			full_result = hp.high_precision_S2_0n(n, float(a), float(λ))
-			print(f"S2_0n Debug: High-precision S2_0n = {full_result:.6e}")
-			return full_result
-		else:
-			# Use direct computation for moderate beta values
-			G = scipy.special.gamma(beta_m)
-			ψ = scipy.special.digamma(beta_m)
-			ψ1 = scipy.special.polygamma(1, beta_m)
-			I2 = G * (ψ ** 2 + ψ1 - 2.0 * log2λ * ψ + L2)
-			print(f"S2_0n Debug: I2 before finite check = {I2}")
-			I2 = np.where(np.isfinite(I2), I2, 0.0)
-		
-		print(f"S2_0n Debug: I2 after finite check = {I2}")
-		
-		# All terms fit in normal arithmetic
-		terms = ((-1.0) ** mm) * (cm / scipy.special.gamma(mm + 1)) * I2
-		sum_terms = np.sum(terms)
-		
-		print(f"S2_0n Debug: individual terms = {terms}")
-		print(f"S2_0n Debug: sum of terms = {sum_terms:.6e}")
-	
-	result = (N0 * Nn) / (a ** 3) * sum_terms
-	print(f"S2_0n Debug: final prefactor = {(N0 * Nn) / (a ** 3):.6e}")
-	print(f"S2_0n Debug: final result = {result:.6e}")
-	
-	return result
+	# As with S1_0n, always delegate to the high-precision
+	# implementation to avoid duplicated, fragile logic here.
+	return hp.high_precision_S2_0n(n, float(a), float(λ))
 
 
 def M_0n(n, a, λ, µ_prime, µ_double_prime=0.0):

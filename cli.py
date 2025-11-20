@@ -254,11 +254,11 @@ def compute(
 		# retrieve a and λ from the main module after setup_globals ran
 		Mval = M_0n(overtone_order, mm.a, mm.λ, µ_prime, µ_double_prime)
 		typer.echo(f"Debug: Raw transition dipole M = {Mval:.25e} C·m")
+		typer.echo("This value could be either negative or positive.")
 		
 		# Check if the value is exactly zero
 		if abs(Mval) == 0.0:
 			typer.echo("Warning: Transition dipole is exactly zero - check dipole derivatives and bond selection")
-			
 	except Exception as e:
 		typer.secho(f"Error computing M: {e}", fg="red", err=True)
 		raise typer.Exit(code=1)
