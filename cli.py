@@ -44,6 +44,7 @@ def compute(
 	observed_frequency: Optional[float] = typer.Argument(None, help="Observed vibrational frequency (cm^-1). If omitted you will be prompted"), 
 	overtone_order: Optional[int] = typer.Argument(None, help="Overtone order (n=1 for first overtone). If omitted you will be prompted"), 
 	coords: Optional[str] = typer.Option(None, help="Cartesian coordinates (x,y,z) in Å for each atom's position in the chosen molecule's geometry. You must get such data from the CCDC Database (https://www.ccdc.cam.ac.uk/structures/), since that data is directly optimized to high-level ab initio quality"),
+	specified_spin: Optional[int] = typer.Option(None, "--specified-spin", help="Spin multiplicity (0 for singlet, 1 for doublet, etc.). If omitted you will be prompted when needed."),
 	delta: Optional[float] = typer.Option(0.01, help="Finite-difference displacement magnitude in Å."),
 	bond: Optional[str] = typer.Option(None, help="Bond indices: 'n,x' for single bond or '(n,x);(a,x)' for dual bond axes with mass weighting."),
 	fwhm: Optional[float] = typer.Option(None, help="Assumed FWHM of the overtone band in cm^-1"),
@@ -56,9 +57,6 @@ def compute(
 	in sequence. Masses are entered in amu and converted to kg automatically.
 	"""
 	
-	# Intialize global constant specified_spin
-	specified_spin: Optional[int] = None
-
 	# prompt for missing required values
 	if amu_a is None:
 		amu_a = typer.prompt("Molar mass of element A (amu)", type=float)
