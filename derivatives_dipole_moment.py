@@ -1,4 +1,6 @@
 import warnings
+import random
+
 # Suppress pkg_resources deprecation warning from pyberny
 warnings.filterwarnings("ignore", message="pkg_resources is deprecated", category=UserWarning)
 
@@ -6,14 +8,15 @@ from pyscf import gto, scf
 import numpy as np
 import os
 from typing import Any, Optional
-# lazily import CC and grad inside functions to avoid static analysis issues
-cc = None
-grad = None
 from tqdm import tqdm
 from normalize_bonds import process_bond_displacements
 from optimize_geometry import optimize_geometry_ccsd
-from stabilization.ccsd_stabilization import CCSDRunResult, run_stabilized_ccsd
-from stabilization.ccsdt_stabilization import CCSDTResult, compute_triples_correction
+
+# NOTE: For deterministic behaviour we lock all stochastic sources here.
+# This ensures that repeated runs with identical inputs produce the
+# same SCF-based dipole derivatives and hence the same ε values.
+np.random.seed(12345)
+random.seed(12345)
 
 # ===== MAXIMUM PRECISION DIPOLE DERIVATIVE SOLVING WITH CCSD(T) =======
 #
@@ -33,17 +36,21 @@ from stabilization.ccsdt_stabilization import CCSDTResult, compute_triples_corre
 # Optimization is done before this dipole computation can begin in its separate module
 
 
-def dipole_for_geometry(atom_string: str, spin: int, basis: str | None = None, conv_tol: float = 5e-3, max_cycle: int = 150,
+def dipole_for_geometry(atom_string: str, spin: int, basis: str | None = None,
+					   conv_tol: float = 1e-9, max_cycle: int = 300,
 					   enable_stabilized_attempt: bool = True,
 					   stabilized_direct: bool = True,
 					   stabilized_diis_space: int = 16,
 					   stabilized_max_cycle: int = 400,
-					   stabilized_conv_tol: float = 1e-3,
+					   stabilized_conv_tol: float = 1e-7,
 					   stabilized_level_shift: float = 0.2) -> np.ndarray:
-	"""Return the molecular dipole vector (Debye) computed at CCSD(T) level.
+	"""Return the molecular dipole vector (Debye) **at SCF level only**.
 
-	This function uses full CCSD(T) method for accurate dipole moments,
-	essential for high-accuracy overtone transition dipole calculations.
+	To guarantee deterministic behaviour and avoid run-to-run variation
+	from CCSD(T) convergence issues, this implementation *always* uses
+	SCF densities for the dipole and does **not** attempt any correlated
+	(CCSD/CCSD(T)) dipole evaluation. Geometry optimization may still use
+	CCSD where available, but the dipole itself is SCF-only.
 
 	Parameters
 	----------
@@ -79,7 +86,7 @@ def dipole_for_geometry(atom_string: str, spin: int, basis: str | None = None, c
 	if basis is None:
 		raise ValueError("dipole_for_geometry requires a user-specified basis set")
 
-	print(f"Computing CCSD(T) dipole for geometry with basis {basis}")
+	print(f"Computing SCF dipole for geometry with basis {basis}")
 	
 	# Import stabilization module
 	from stabilization.scf_stabilization import robust_scf_calculation, check_geometry_for_problems
@@ -92,11 +99,11 @@ def dipole_for_geometry(atom_string: str, spin: int, basis: str | None = None, c
 	with tqdm(desc="SCF Convergence", unit="step", colour='blue') as pbar:
 		try:
 			mf = robust_scf_calculation(
-				atom_string=atom_string, 
-				spin=spin, 
+				atom_string=atom_string,
+				spin=spin,
 				basis=basis,
-				target_conv_tol=1e-7,  # Loosened tolerance to help problematic systems converge
-				max_cycle=250
+				target_conv_tol=conv_tol,
+				max_cycle=max_cycle,
 			)
 			pbar.update(1)
 			pbar.set_postfix(converged=mf.converged, energy=f"{mf.e_tot:.6f}")
@@ -109,163 +116,43 @@ def dipole_for_geometry(atom_string: str, spin: int, basis: str | None = None, c
 	# Get molecule object from the mean field calculation
 	mol = mf.mol
 	
-	print(f"High-precision SCF converged for CCSD(T). Energy = {mf.e_tot:.12f} Hartree")
+	print(f"High-precision SCF converged for dipole evaluation. Energy = {mf.e_tot:.12f} Hartree")
 
-	def scf_dipole_fallback(reason: str | None = None) -> np.ndarray:
-		"""Return SCF (or nuclear) dipole when CCSD cannot be obtained."""
-		if reason:
-			print(reason)
-		print("⚠️  Using SCF dipole as fallback...")
-		print("Note: For finite differences, SCF dipole accuracy is often sufficient")
-		try:
-			dm1 = mf.make_rdm1()
-			dip_ints = mol.intor('int1e_r', comp=3)
-			
-			if isinstance(dm1, tuple):
-				dm1_total = dm1[0] + dm1[1]
-			else:
-				dm1_total = dm1
-			
-			if len(dm1_total.shape) == 3:
-				dm1_total = np.sum(dm1_total, axis=0)
-			
-			dip_elec = -np.einsum('xij,ij->x', dip_ints, dm1_total)
-			charges = mol.atom_charges()
-			coords = mol.atom_coords()
-			dip_nuc = np.einsum('i,ix->x', charges, coords)
-			dipole_au = dip_elec + dip_nuc
-			au_to_debye = 2.541746473
-			dipole_debye = dipole_au * au_to_debye
-			print(f"SCF dipole moment (fallback): {np.linalg.norm(dipole_debye):.8f} Debye")
-			return dipole_debye
-		except Exception as scf_e:
-			print(f"SCF dipole calculation failed: {scf_e}. Using nuclear dipole as final fallback...")
-			charges = mol.atom_charges()
-			coords = mol.atom_coords()
-			dip_nuc = np.einsum('i,ix->x', charges, coords)
-			au_to_debye = 2.541746473
-			dipole_debye = dip_nuc * au_to_debye
-			print(f"Nuclear dipole moment (final fallback): {np.linalg.norm(dipole_debye):.8f} Debye")
-			return dipole_debye
-	
-	# Import CC module to ensure availability before attempting CCSD
+	# From this point onward we *always* compute the dipole from the SCF
+	# density matrix. This removes CCSD(T) as a source of
+	# non-determinism and guarantees a single, well-defined
+	# computational path per geometry.
+
 	try:
-		from pyscf import cc  # noqa: F401
-	except ImportError:
-		raise RuntimeError("PySCF CC module not available - cannot compute CCSD(T) dipoles")
-
-	if not enable_stabilized_attempt:
-		return scf_dipole_fallback("⚠️  Stabilized CCSD attempt disabled by user.")
-
-	target_conv_tol = max(conv_tol, stabilized_conv_tol)
-	target_max_cycle = max(max_cycle, stabilized_max_cycle)
-
-	print("Running a single stabilized CCSD attempt with relaxed tolerance")
-	ccsd_result = run_stabilized_ccsd(
-		mf,
-		conv_tol=target_conv_tol,
-		max_cycle=target_max_cycle,
-		diis_space=int(stabilized_diis_space),
-		diis_start=1,
-		level_shift=float(stabilized_level_shift),
-		direct=bool(stabilized_direct),
-		desc="Stabilized CCSD Attempt",
-		colour='green',
-	)
-
-	if not ccsd_result.converged or ccsd_result.solver is None:
-		print("❌ Stabilized CCSD did not converge with relaxed settings")
-		ccsd_result.log_diagnostics()
-		return scf_dipole_fallback("⚠️  CCSD convergence unavailable - falling back to SCF dipole")
-
-	mycc = ccsd_result.solver
-	assert mycc is not None
-	print(f"✅ CCSD converged. Correlation energy = {mycc.e_corr:.8f} Hartree")
-
-	triples_result = compute_triples_correction(mycc, desc="CCSD(T) Triples Correction", colour='red')
-	triples_result.log_status()
-	triples_energy = triples_result.energy
-	ccsd_t_available = bool(triples_result.available and triples_energy is not None)
-	if ccsd_t_available and triples_energy is not None:
-		total_energy = mycc.e_tot + triples_energy
-		print(f"Total CCSD(T) energy: {total_energy:.8f} Hartree")
-	
-	# Calculate CCSD dipole moment
-	dipole_method = "CCSD(T)" if ccsd_t_available else "CCSD"
-	with tqdm(desc=f"Computing {dipole_method} Dipole Moment", unit="step", colour='magenta') as pbar:
-		try:
-			# Use CCSD density matrices for dipole calculation
-			dm1 = mycc.make_rdm1()
-			pbar.update(1)
-			pbar.set_postfix(step="density_matrix")
-			
-			# Handle both RHF and UHF cases
-			if isinstance(dm1, tuple):
-				# UHF case: dm1 is (dm1_alpha, dm1_beta)
-				dm1_total = dm1[0] + dm1[1]  # Total density matrix
-			else:
-				# RHF case: dm1 is already the total density matrix
-				dm1_total = dm1
-			
-			# Calculate dipole integrals
-			dip_ints = mol.intor('int1e_r', comp=3)  # x, y, z components
-			pbar.update(1) 
-			pbar.set_postfix(step="dipole_integrals")
-			
-			# Calculate electronic dipole contribution
-			# dip_ints has shape (3, nbasis, nbasis), dm1_total has shape (nbasis, nbasis)
-			dip_elec = -np.einsum('xij,ij->x', dip_ints, dm1_total)
-			pbar.update(1)
-			pbar.set_postfix(step="electronic_contribution")
-			
-			# Add nuclear contribution
-			charges = mol.atom_charges()
-			coords = mol.atom_coords()
-			dip_nuc = np.einsum('i,ix->x', charges, coords)
-			pbar.update(1)
-			pbar.set_postfix(step="nuclear_contribution")
-			
-			# Total dipole moment in atomic units
-			dipole_au = dip_elec + dip_nuc
-			
-			# Convert from atomic units to Debye (1 au = 2.541746 Debye)
-			au_to_debye = 2.541746473
-			dipole_debye = dipole_au * au_to_debye
-			
-			print(f"✅ {dipole_method} dipole moment: {np.linalg.norm(dipole_debye):.6f} Debye")
-			print(f"{dipole_method} dipole components (Debye): [{dipole_debye[0]:.6f}, {dipole_debye[1]:.6f}, {dipole_debye[2]:.6f}]")
-			
-			return dipole_debye
-			
-		except Exception as e:
-			print(f"❌ Failed to compute {dipole_method} dipole moment: {e}")
-			print("Falling back to SCF dipole moment...")
-			# Fall back to SCF dipole if CCSD dipole fails
-			try:
-				dm1_scf = mf.make_rdm1()
-				dip_ints = mol.intor('int1e_r', comp=3)
-				
-				# Handle density matrix dimensions properly
-				if isinstance(dm1_scf, tuple):
-					dm1_total = dm1_scf[0] + dm1_scf[1]
-				else:
-					dm1_total = dm1_scf
-				
-				if len(dm1_total.shape) == 3:
-					dm1_total = np.sum(dm1_total, axis=0)
-				
-				dip_elec = -np.einsum('xij,ij->x', dip_ints, dm1_total)
-				charges = mol.atom_charges()
-				coords = mol.atom_coords()
-				dip_nuc = np.einsum('i,ix->x', charges, coords)
-				dipole_au = dip_elec + dip_nuc
-				dipole_debye = dipole_au * au_to_debye
-				
-				print(f"SCF dipole moment (fallback): {np.linalg.norm(dipole_debye):.6f} Debye")
-				return dipole_debye
-				
-			except Exception as scf_e:
-				raise RuntimeError(f"All dipole calculation methods failed. CCSD: {e}, SCF: {scf_e}")
+		dm1 = mf.make_rdm1()
+		mol = mf.mol
+		dip_ints = mol.intor('int1e_r', comp=3)
+		if isinstance(dm1, tuple):
+			dm1_total = dm1[0] + dm1[1]
+		else:
+			dm1_total = dm1
+		if len(dm1_total.shape) == 3:
+			dm1_total = np.sum(dm1_total, axis=0)
+		dip_elec = -np.einsum('xij,ij->x', dip_ints, dm1_total)
+		charges = mol.atom_charges()
+		coords = mol.atom_coords()
+		dip_nuc = np.einsum('i,ix->x', charges, coords)
+		dipole_au = dip_elec + dip_nuc
+		au_to_debye = 2.541746473
+		dipole_debye = dipole_au * au_to_debye
+		print(f"✅ SCF dipole moment: {np.linalg.norm(dipole_debye):.6f} Debye")
+		print(f"SCF dipole components (Debye): [{dipole_debye[0]:.6f}, {dipole_debye[1]:.6f}, {dipole_debye[2]:.6f}]")
+		return dipole_debye
+	except Exception as scf_e:
+		print(f"SCF dipole calculation failed: {scf_e}. Using nuclear dipole as final fallback...")
+		mol = mf.mol
+		charges = mol.atom_charges()
+		coords = mol.atom_coords()
+		dip_nuc = np.einsum('i,ix->x', charges, coords)
+		au_to_debye = 2.541746473
+		dipole_debye = dip_nuc * au_to_debye
+		print(f"Nuclear dipole moment (final fallback): {np.linalg.norm(dipole_debye):.6f} Debye")
+		return dipole_debye
 
 # Finally we compute the actual µ dipole derivatives
 def compute_µ_derivatives(coords_string: str, specified_spin: int, delta: float = 0.005, basis: str | None = None, atom_index: int = 0, axis: int = 2, bond_pair: tuple[int, int] | None = None, dual_bond_axes: str | None = None, m1: float | None = None, m2: float | None = None,
