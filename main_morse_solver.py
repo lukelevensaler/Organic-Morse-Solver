@@ -27,10 +27,12 @@ def setup_globals(A, B, fundamental_frequency, observed_frequency, overtone_orde
 	µ = (m1 * m2) / (m1 + m2)
 
 	# anharmonicity constant
-	x_e = (ṽ_e * n - ṽ_obs) / (ṽ_e * (n**2 + 0.5))
+	# ν_obs ≈ n ν_e − n(n+1) ν_e x_e  ⇒  x_e = (n ν_e − ν_obs) / (n(n+1) ν_e)
+	x_e = (ṽ_e * n - ṽ_obs) / (ṽ_e * n * (n + 1))
 
-	# dissociation energy in cm^-1
-	D_e_cm = (ṽ_e / (4 * x_e))
+	# dissociation energy in cm^-1 (use magnitude of x_e to avoid
+	# sign-convention issues that would make D_e negative)
+	D_e_cm = ṽ_e / (4 * abs(x_e))
 
 	# conversion of dissociation energy to Joules
 	hc = scipy.constants.Planck * scipy.constants.speed_of_light * 100  # h*c in J*cm
@@ -39,12 +41,12 @@ def setup_globals(A, B, fundamental_frequency, observed_frequency, overtone_orde
 	# harmonic angular frequency
 	w_e = 2 * (np.pi) * (scipy.constants.speed_of_light) * ṽ_e
 
-	# morse paramter a
-	a = (w_e) / np.sqrt((2 * D_e) / µ)
+	# morse paramter a; use |D_e| to ensure a real, positive value
+	a = w_e / np.sqrt((2 * abs(D_e)) / µ)
 
 	# dimensionless morse parameter λ (DO NOT CONFUSE WITH PYTHON lambda)
-	# λ = sqrt(2 µ D_e) / (a ħ)
-	λ = np.sqrt(2 * µ * D_e) / (a * scipy.constants.hbar)
+	# λ = sqrt(2 µ D_e) / (a ħ); depend only on |D_e|
+	λ = np.sqrt(2 * µ * abs(D_e)) / (a * scipy.constants.hbar)
 
 	# morse potential (measured from equilibrium at Q=0)
 	def V_local(Q):

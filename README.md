@@ -18,6 +18,29 @@
 * Approximate integer overtone order of the molecule's observed wavenumber relative to the fundamental wavenumber
 
 
+## Morse model parameters used
+
+For an IR (or NIR) overtone transition from $v=0$ to $v=n$, the solver assumes the standard Morse-oscillator relation between the fundamental frequency $\nu_e$, the anharmonicity constant $x_e$, and the observed overtone wavenumber $\nu_{0\to n}$:
+
+$$
+\nu_{0\to n} \approx n\,\nu_e - n(n+1)\,\nu_e x_e.
+$$
+
+Solving for $x_e$ in terms of the fundamental and observed overtone gives
+
+$$
+x_e = \frac{n\,\nu_e - \nu_{0\to n}}{n(n+1)\,\nu_e}.
+$$
+
+From $\nu_e$ and $x_e$, the dissociation energy in wavenumber units is taken as the magnitude
+
+$$
+D_e^{(\mathrm{cm}^{-1})} = \frac{\nu_e}{4\,|x_e|},
+$$
+
+which avoids sign-convention issues that can make $D_e$ negative. This $D_e^{(\mathrm{cm}^{-1})}$ is then converted to Joules and used, together with the reduced mass, to construct the Morse parameters $a$ and $\lambda$ that enter the high-precision overlap and intensity calculations.
+
+
 ## Allowed organic stretches:
 
 
