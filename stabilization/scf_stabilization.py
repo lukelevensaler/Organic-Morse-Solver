@@ -143,7 +143,7 @@ def robust_scf_calculation(atom_string: str, spin: int, basis: Optional[str] = N
         print(f"Failed to build molecule with user's basis {basis}: {e}")
         raise RuntimeError(f"Cannot proceed with user-specified basis {basis}: {e}")
     
-    # Set up SCF calculation (CPU-only)
+    # Set up SCF calculation
     if spin != 0:
         mf = scf.UHF(mol)
     else:

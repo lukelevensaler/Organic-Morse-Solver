@@ -71,12 +71,12 @@ def optimize_geometry_scf(coords_string: str, specified_spin: int, basis: str | 
 
 	# Always use SCF gradients (UHF/RHF) deterministically
 	with tqdm(desc="Building SCF Gradients", unit="step", colour='cyan') as pbar:
-		print("Building SCF gradients (CPU-only)...")
+		print("Building SCF gradients")
 		g = grad.UHF(mf) if specified_spin != 0 else grad.RHF(mf)
 		pbar.update(1)
 
 	with tqdm(desc="Testing Gradient Calculation", unit="step", colour='yellow') as pbar:
-		print("Testing gradient calculation (CPU-only)...")
+		print("Testing gradient calculation")
 		print(f"Gradient object type: {type(g)}")
 		grad_array = g.kernel()
 		if isinstance(grad_array, np.ndarray) and grad_array.size > 0:
