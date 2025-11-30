@@ -3,34 +3,37 @@ Pytest configuration and shared fixtures for Organic Morse Solver tests
 """
 
 import pytest
-import numpy as np
-from pyscf import gto
+
+
+WATER_TRIPLE_STRING = """
+O 0.0 0.0 0.0
+H 0.8 0.6 0.0
+H -0.8 0.6 0.0
+"""
+
+
+@pytest.fixture(scope="session")
+def water_coords():
+    """Shared distorted water geometry used across tests."""
+    return WATER_TRIPLE_STRING
 
 
 @pytest.fixture(scope="session")
 def sample_molecules():
     """Fixture providing various test molecules"""
     molecules = {
-        "h2o": """
-        O 0.0 0.0 0.0
-        H 0.757 0.587 0.0
-        H -0.757 0.587 0.0
-        """,
-        "h2o_distorted": """
-        O 0.0 0.0 0.0
-        H 0.8 0.6 0.0
-        H -0.8 0.6 0.0
-        """,
+        "h2o": WATER_TRIPLE_STRING,
+        "h2o_distorted": WATER_TRIPLE_STRING,
         "h2": """
-        H 0.0 0.0 0.0
-        H 0.0 0.0 0.74
-        """,
+H 0.0 0.0 0.0
+H 0.0 0.0 0.74
+""",
         "nh3": """
-        N 0.0 0.0 0.0
-        H 0.0 0.9377 -0.3816
-        H 0.8121 -0.4688 -0.3816
-        H -0.8121 -0.4688 -0.3816
-        """
+N 0.0 0.0 0.0
+H 0.0 0.9377 -0.3816
+H 0.8121 -0.4688 -0.3816
+H -0.8121 -0.4688 -0.3816
+"""
     }
     return molecules
 

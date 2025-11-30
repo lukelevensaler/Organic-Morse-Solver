@@ -406,7 +406,7 @@ def high_precision_S2_0n(n, a, lambda_val):
     return float(total)
 
 
-def _mp_morse_integral(beta, lambda_val, k: int):
+def mp_morse_integral(beta, lambda_val, k: int):
     """Evaluate ∫_0^∞ y^{β-1} e^{-y} [ln(y) - ln(2λ)]^k dy with mpmath."""
     if mp is None:
         raise RuntimeError("mpmath is required for high-order Morse integrals; please install it.")
@@ -468,7 +468,7 @@ def high_precision_S4_0n(n: int, a: float, lambda_val: float) -> float:
     return _mp_high_precision_Sk_0n_logsum(n, a, lambda_val, k=4)
 
 
-def _ensure_mpmath_precision(min_dps: int = 150) -> None:
+def ensure_mpmath_precision(min_dps: int = 150) -> None:
     """Raise the working precision for mpmath when larger sums demand it."""
     if mp is None:
         raise RuntimeError("mpmath is required for high-order Morse integrals; please install it.")
@@ -476,7 +476,7 @@ def _ensure_mpmath_precision(min_dps: int = 150) -> None:
         mp.mp.dps = min_dps
 
 
-def _mp_log_N_v(v: int, a: float, lambda_val: float):
+def mp_log_N_v(v: int, a: float, lambda_val: float):
     """Compute log(N_v) with mpmath to avoid Decimal exponent limits."""
     _ensure_mpmath_precision()
     mp_a = mp.mpf(str(a))
@@ -495,7 +495,7 @@ def _mp_log_N_v(v: int, a: float, lambda_val: float):
     return log_N
 
 
-def _mp_log_I_beta(beta, lambda_val, k: int) -> tuple[int, "mp.mpf"]:
+def mp_log_I_beta(beta, lambda_val, k: int) -> tuple[int, "mp.mpf"]:
     """Return (sign, log|I_k|) for the shifted logarithmic integral."""
     _ensure_mpmath_precision()
     log_gamma_beta = mp.loggamma(beta)
@@ -535,7 +535,7 @@ def _mp_log_I_beta(beta, lambda_val, k: int) -> tuple[int, "mp.mpf"]:
     return sign, log_abs
 
 
-def _mp_signed_log_sum(log_terms, term_signs: list[int]) -> tuple[int, "mp.mpf"]:
+def mp_signed_log_sum(log_terms, term_signs: list[int]) -> tuple[int, "mp.mpf"]:
     """Combine huge terms in log-space with mpmath precision."""
     if not log_terms:
         return 0, mp.ninf
@@ -569,7 +569,7 @@ def _mp_signed_log_sum(log_terms, term_signs: list[int]) -> tuple[int, "mp.mpf"]
     return sign_total, log_abs_total
 
 
-def _mp_high_precision_Sk_0n_logsum(n: int, a: float, lambda_val: float, k: int) -> float:
+def mp_high_precision_Sk_0n_logsum(n: int, a: float, lambda_val: float, k: int) -> float:
     """Generalised high-precision Sk using analytic polygamma expressions."""
     if mp is None:
         raise RuntimeError("mpmath is required for high-order Morse integrals; please install it.")

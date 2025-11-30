@@ -105,7 +105,7 @@ def dipole_for_geometry(atom_string: str, spin: int, basis: str | None = None,
 	# Build molecule for the initial direct attempt
 	mol = gto.M(atom=atom_string, basis=basis, spin=spin, unit="Angstrom")
 
-	def _direct_scf_run() -> scf.hf.SCF:
+	def direct_scf_run() -> scf.hf.SCF:
 		with tqdm(desc="SCF Convergence", unit="step", colour='blue') as pbar:
 			mf_direct = scf.UHF(mol) if spin != 0 else scf.RHF(mol)
 			mf_direct.conv_tol = conv_tol

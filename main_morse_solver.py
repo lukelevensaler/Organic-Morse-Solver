@@ -131,7 +131,7 @@ def N_v(v, a, λ):
 		return result
 
 
-def _convert_mu_derivative_to_SI(mu_value: float, order: int) -> float:
+def convert_mu_derivative_to_SI(mu_value: float, order: int) -> float:
 	"""Convert µ-derivative expressed in Debye·Å^{-order} to SI.
 
 	Parameters
@@ -151,7 +151,7 @@ def _convert_mu_derivative_to_SI(mu_value: float, order: int) -> float:
 	return mu_value * DEBYE_TO_C_M / (ANGSTROM_TO_M ** order)
 
 
-def _overlap_in_angstrom_units(overlap_value: float, power: int) -> float:
+def overlap_in_angstrom_units(overlap_value: float, power: int) -> float:
 	"""Express overlap integral ⟨Q^power⟩ in Å^{power} for Debye bookkeeping."""
 	if power == 0:
 		return overlap_value
@@ -273,8 +273,8 @@ def M_if(v_i, v_f, a, λ, µ_prime, µ_double_prime=0.0):
 	S1_val = S1(v_i, v_f, a, λ)
 	S2_val = S2(v_i, v_f, a, λ)
 
-	mu1_si = _convert_mu_derivative_to_SI(µ_prime, 1)
-	mu2_si = _convert_mu_derivative_to_SI(µ_double_prime, 2)
+	mu1_si = convert_mu_derivative_to_SI(µ_prime, 1)
+	mu2_si = convert_mu_derivative_to_SI(µ_double_prime, 2)
 
 	M_si = mu1_si * S1_val
 	if µ_double_prime != 0.0:
@@ -351,10 +351,10 @@ def M_0n(n, a, λ, µ_prime, µ_double_prime=0.0, µ_triple_prime=0.0, µ_quadru
 	S3 = S3_0n(n, a, λ) if µ_triple_prime != 0.0 else 0.0
 	S4 = S4_0n(n, a, λ) if µ_quadruple_prime != 0.0 else 0.0
 
-	S1_angstrom = _overlap_in_angstrom_units(S1, 1)
-	S2_angstrom2 = _overlap_in_angstrom_units(S2, 2)
-	S3_angstrom3 = _overlap_in_angstrom_units(S3, 3) if µ_triple_prime != 0.0 else 0.0
-	S4_angstrom4 = _overlap_in_angstrom_units(S4, 4) if µ_quadruple_prime != 0.0 else 0.0
+	S1_angstrom = overlap_in_angstrom_units(S1, 1)
+	S2_angstrom2 = overlap_in_angstrom_units(S2, 2)
+	S3_angstrom3 = overlap_in_angstrom_units(S3, 3) if µ_triple_prime != 0.0 else 0.0
+	S4_angstrom4 = overlap_in_angstrom_units(S4, 4) if µ_quadruple_prime != 0.0 else 0.0
 
 	print(f"Debug: S1 overlap integral = {S1:.6e} (≈ {S1_angstrom:.6e} Å)")
 	print(f"Debug: S2 overlap integral = {S2:.6e} (≈ {S2_angstrom2:.6e} Å²)")
@@ -363,10 +363,10 @@ def M_0n(n, a, λ, µ_prime, µ_double_prime=0.0, µ_triple_prime=0.0, µ_quadru
 	if µ_quadruple_prime != 0.0:
 		print(f"Debug: S4 overlap integral = {S4:.6e} (≈ {S4_angstrom4:.6e} Å⁴)")
 
-	mu1_si = _convert_mu_derivative_to_SI(µ_prime, 1)
-	mu2_si = _convert_mu_derivative_to_SI(µ_double_prime, 2)
-	mu3_si = _convert_mu_derivative_to_SI(µ_triple_prime, 3)
-	mu4_si = _convert_mu_derivative_to_SI(µ_quadruple_prime, 4)
+	mu1_si = convert_mu_derivative_to_SI(µ_prime, 1)
+	mu2_si = convert_mu_derivative_to_SI(µ_double_prime, 2)
+	mu3_si = convert_mu_derivative_to_SI(µ_triple_prime, 3)
+	mu4_si = convert_mu_derivative_to_SI(µ_quadruple_prime, 4)
 
 	M_si = mu1_si * S1
 	M1_debye = µ_prime * S1_angstrom
