@@ -135,7 +135,7 @@ def dipole_for_geometry(atom_string: str, spin: int, basis: str | None = None,
 			pbar.update(1)
 			pbar.set_postfix(converged=getattr(mf, "converged", False), energy=f"{getattr(mf, 'e_tot', float('nan')):.6f}")
 	else:
-		mf = _direct_scf_run()
+		mf = direct_scf_run()
 		if enable_stabilized_attempt and not getattr(mf, "converged", False):
 			print("Direct SCF did not converge; invoking stabilized fallback.")
 			with tqdm(desc="Stabilized SCF Convergence", unit="pass", colour='cyan') as pbar:
