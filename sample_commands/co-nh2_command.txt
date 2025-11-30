@@ -10,7 +10,6 @@ H -2.0305 -0.3861 -0.0001" \
   --bond "(2,4);(2,5)" \
   --delta 0.01 \
   --fwhm 10 \
-  --scaling-factor 85 \
   --basis aug-cc-pVDZ
 
 # Basis flag can and should be changed as needed, or default used

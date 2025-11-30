@@ -48,7 +48,6 @@ def compute(
 	delta: Optional[float] = typer.Option(0.01, help="Finite-difference displacement magnitude in Å."),
 	bond: Optional[str] = typer.Option(None, help="Bond indices: 'n,x' for single bond or '(n,x);(a,x)' for dual bond axes with mass weighting."),
 	fwhm: Optional[float] = typer.Option(None, help="Assumed FWHM of the overtone band in cm^-1"),
-	scaling_factor: Optional[int] = typer.Option(None, "--scaling-factor", help="Scaling exponent for ε_max (e.g., 1 for 1e1, 64 for 1e64). If omitted, you will be prompted interactively."),
 	basis_set: str = typer.Option("aug-cc-pVTZ", "--basis", help="Basis set for quantum calculations (default: aug-cc-pVTZ)")) -> None:
 	"""Interactive or positional compute.
 
@@ -281,31 +280,12 @@ def compute(
 
 	integrated = integrated_molar_absorptivity(Mval)
 	eps_max = epsilon_peak_from_integrated(integrated, fwhm)
-
-	# Handle scaling factor - use command line option if provided, otherwise prompt
-	if scaling_factor is not None:
-		total_scaling = 10 ** scaling_factor
-		typer.echo(f"Using command-line scaling factor: 10^{scaling_factor} = {total_scaling:.5e}")
-	else:
-		# Prompt for scaling factor with helpful suggestions
-		typer.echo("\nScaling Factor Selection:")
-		typer.echo("  - NIR (Near-Infrared): Consider 35, 45, or up to 64 for short-wave NIR")
-		typer.echo("  - MIR (Mid-Infrared): Usually 1 is fine, sometimes up to 15 is necessary")
-		typer.secho("See references in the README documentation for more information.", fg="cyan")
-		typer.echo("  - Upper limit: 64")
-		scaling_exponent = typer.prompt("Enter scaling exponent (e.g., 1 for 1e1, 64 for 1e64)", type=int, default=1)
-		total_scaling = 10 ** scaling_exponent
 	
 	typer.echo(f"\n=== RESULTS ===")
 	typer.echo(f"Computed M_0-> {overtone_order}: {Mval:.25e} Debye ({Mval_SI:.25e} C·m)")
 	typer.echo(f"Integrated molar absorptivity: {integrated:.25e} cm M^-1")
-	typer.echo(f"Estimated ε_max: {eps_max:.25e} M^-1 cm^-1")
-	
-	# Scaled result
-	scaled_eps = eps_max * total_scaling
-	typer.echo(f"\n=== SCALED ε_max ===")
-	typer.echo(f"Scaling factor: {total_scaling:.5e}")
-	typer.echo(f"Scaled ε_max: {scaled_eps:.25e} M^-1 cm^-1")
+	typer.echo(f"Final ε_max: {eps_max:.25e} M^-1 cm^-1")
+
 
 
 if __name__ == "__main__":
