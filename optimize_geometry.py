@@ -57,7 +57,12 @@ def optimize_geometry_scf(coords_string: str, specified_spin: int, basis: str | 
 		raise RuntimeError(msg)
 
 	# Build molecule and run a single SCF
-	mol = gto.M(atom="\n".join(f"{a} {x} {y} {z}" for a, (x, y, z) in zip(atoms, positions)), basis=basis, spin=specified_spin)
+	mol = gto.M(
+		atom="\n".join(f"{a} {x} {y} {z}" for a, (x, y, z) in zip(atoms, positions)),
+		basis=basis,
+		spin=specified_spin,
+		unit="Angstrom",
+	)
 	with tqdm(desc="SCF for Geometry Optimization", unit="step", colour='blue') as pbar:
 		mf = scf.UHF(mol) if specified_spin != 0 else scf.RHF(mol)
 		mf.conv_tol = 1e-8

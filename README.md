@@ -283,16 +283,7 @@ $$
 $$
 
 
-### Magnitude Conversion to SI Units:
-$$
-|\mu'(0)| = |\vec{\mu}'(0)| \times \frac{3.33564 \times 10^{-30}}{10^{-10}} \quad \text{[C·m/m]}
-$$
-$$
-|\mu''(0)| = |\vec{\mu}''(0)| \times \frac{3.33564 \times 10^{-30}}{10^{-20}} \quad \text{[C·m/m²]}
-$$
-
-
-**Output**: First and second dipole derivatives in SI units for Morse model input.
+**Output**: First and second dipole derivatives in Debye units for Morse model input.
 
 
 ---

@@ -11,6 +11,7 @@ from typing import Any, Optional
 from tqdm import tqdm
 from normalize_bonds import process_bond_displacements
 from optimize_geometry import optimize_geometry_scf
+from stabilization.scf_stabilization import robust_scf_calculation
 
 # NOTE: For deterministic behaviour we lock all stochastic sources here.
 # This ensures that repeated runs with identical inputs produce the
@@ -42,7 +43,8 @@ def dipole_for_geometry(atom_string: str, spin: int, basis: str | None = None,
 					   stabilized_max_cycle: int = 400,
 					   stabilized_conv_tol: float = 1e-7,
 					   stabilized_level_shift: float = 0.2) -> np.ndarray:
-	"""Return the molecular dipole vector (Debye) **at SCF level only**.
+    
+	"""Return the molecular dipole vector (Debye/Å) at SCF level only.
 
 	To guarantee deterministic behaviour and avoid run-to-run variation
 	from correlated-method convergence issues, this implementation *always*
@@ -62,17 +64,17 @@ def dipole_for_geometry(atom_string: str, spin: int, basis: str | None = None,
 	max_cycle : int
 		Maximum SCF iterations for the initial configuration (default: 300)
 	enable_stabilized_attempt : bool
-		Legacy parameter (no effect in SCF-only implementation)
+		Whether to run a stabilized SCF retry when the direct solve fails
 	stabilized_direct : bool
-		Legacy parameter (no effect in SCF-only implementation)
+		If True attempt a direct SCF solve first before stabilization fallback
 	stabilized_diis_space : int
-		Legacy parameter (no effect in SCF-only implementation)
+		DIIS subspace dimension applied when stabilization is enabled
 	stabilized_max_cycle : int
-		Legacy parameter (no effect in SCF-only implementation)
+		Maximum SCF cycles used for the stabilized retry path
 	stabilized_conv_tol : float
-		Legacy parameter (no effect in SCF-only implementation)
+		Relaxed convergence tolerance for the stabilized retry
 	stabilized_level_shift : float
-		Legacy parameter (no effect in SCF-only implementation)
+		Initial level shift supplied to the stabilized retry
 
 	Returns
 	-------
@@ -85,27 +87,62 @@ def dipole_for_geometry(atom_string: str, spin: int, basis: str | None = None,
 
 	print(f"Computing SCF dipole for geometry with basis {basis}")
 	
-	# Build molecule and run a single deterministic SCF calculation
-	# without any additional stabilization layers. This guarantees a
-	# single, reproducible mean-field path for dipole evaluation.
-	mol = gto.M(atom=atom_string, basis=basis, spin=spin)
-	with tqdm(desc="SCF Convergence", unit="step", colour='blue') as pbar:
-		mf = scf.UHF(mol) if spin != 0 else scf.RHF(mol)
-		mf.conv_tol = conv_tol
-		mf.max_cycle = max_cycle
-		mf.kernel()
-		pbar.update(1)
-		pbar.set_postfix(converged=getattr(mf, "converged", False), energy=f"{getattr(mf, 'e_tot', float('nan')):.6f}")
+	# Build molecule for the initial direct attempt
+	mol = gto.M(atom=atom_string, basis=basis, spin=spin, unit="Angstrom")
+
+	def _direct_scf_run() -> scf.hf.SCF:
+		with tqdm(desc="SCF Convergence", unit="step", colour='blue') as pbar:
+			mf_direct = scf.UHF(mol) if spin != 0 else scf.RHF(mol)
+			mf_direct.conv_tol = conv_tol
+			mf_direct.max_cycle = max_cycle
+			if enable_stabilized_attempt and stabilized_diis_space is not None and hasattr(mf_direct, 'diis_space'):
+				mf_direct.diis_space = stabilized_diis_space
+			mf_direct.kernel()
+			pbar.update(1)
+			pbar.set_postfix(converged=getattr(mf_direct, "converged", False), energy=f"{getattr(mf_direct, 'e_tot', float('nan')):.6f}")
+		return mf_direct
+
+	mf: scf.hf.SCF
+
+	if enable_stabilized_attempt and not stabilized_direct:
+		print("Skipping direct SCF per configuration; running stabilized solver...")
+		with tqdm(desc="Stabilized SCF Convergence", unit="pass", colour='cyan') as pbar:
+			mf = robust_scf_calculation(
+				atom_string=atom_string,
+				spin=spin,
+				basis=basis,
+				target_conv_tol=conv_tol,
+				max_cycle=stabilized_max_cycle,
+				initial_conv_tol=stabilized_conv_tol,
+				initial_level_shift=stabilized_level_shift,
+				initial_diis_space=stabilized_diis_space,
+			)
+			pbar.update(1)
+			pbar.set_postfix(converged=getattr(mf, "converged", False), energy=f"{getattr(mf, 'e_tot', float('nan')):.6f}")
+	else:
+		mf = _direct_scf_run()
+		if enable_stabilized_attempt and not getattr(mf, "converged", False):
+			print("Direct SCF did not converge; invoking stabilized fallback.")
+			with tqdm(desc="Stabilized SCF Convergence", unit="pass", colour='cyan') as pbar:
+				mf = robust_scf_calculation(
+					atom_string=atom_string,
+					spin=spin,
+					basis=basis,
+					target_conv_tol=conv_tol,
+					max_cycle=stabilized_max_cycle,
+					initial_conv_tol=stabilized_conv_tol,
+					initial_level_shift=stabilized_level_shift,
+					initial_diis_space=stabilized_diis_space,
+				)
+				pbar.update(1)
+				pbar.set_postfix(converged=getattr(mf, "converged", False), energy=f"{getattr(mf, 'e_tot', float('nan')):.6f}")
 
 	# For dipole evaluation we allow slightly underconverged SCF and use
 	# the last available density matrix rather than aborting the workflow.
 	if not getattr(mf, "converged", False):
 		print("WARNING: SCF did not reach target conv_tol; using last iteration density for dipole.")
-	
-	# Get molecule object from the mean field calculation
-	mol = mf.mol
-	
-	print(f"High-precision SCF converged for dipole evaluation. Energy = {mf.e_tot:.12f} Hartree")
+	else:
+		print(f"High-precision SCF converged for dipole evaluation. Energy = {mf.e_tot:.12f} Hartree")
 
 	# From this point onward we compute the dipole from the SCF
 	# density matrix.
@@ -162,7 +199,7 @@ def compute_µ_derivatives(coords_string: str, specified_spin: int, delta: float
 	m1: mass of element A (same as main_morse_solver.py m1 = A)
 	m2: mass of element B (same as main_morse_solver.py m2 = B)
 	
-	Returns (µ_prime, µ_double_prime) in SI units: µ_prime in C·m/m, µ_double_prime in C·m/m^2
+	Returns (µ_prime, µ_double_prime) in Debye units: µ_prime in Debye/Å, µ_double_prime in Debye/Å^2
 	"""
 	# read coords
 	if os.path.isfile(coords_string):
@@ -270,14 +307,13 @@ def compute_µ_derivatives(coords_string: str, specified_spin: int, delta: float
 	print(f"Debug: SCF first derivative vector (Debye/Å): {µ_prime_vec}")
 	print(f"Debug: SCF second derivative vector (Debye/Å²): {µ_double_prime_vec}")
 
-	# convert from Debye/(Å^n) to C·m/(m^n)
-	D_TO_CM = 3.33564e-30
-	µ_prime_si = np.linalg.norm(µ_prime_vec) * (D_TO_CM / 1e-10)
-	µ_double_prime_si = np.linalg.norm(µ_double_prime_vec) * (D_TO_CM / 1e-20)
+	# normalize
+	µ_prime = np.linalg.norm(µ_prime_vec)
+	µ_double_prime = np.linalg.norm(µ_double_prime_vec)
 	
-	print(f"Debug: |µ_prime(0)| = {µ_prime_si:.10e} C·m/m (SCF precision)")
+	print(f"Debug: |µ_prime(0)| = {µ_prime:.10e} Debye(SCF precision)")
 
-	return float(µ_prime_si), float(µ_double_prime_si)
+	return float(µ_prime), float(µ_double_prime)
 
 def compute_µ_derivatives_from_optimization(optimized_coords: np.ndarray, atoms: list[str], specified_spin: int, delta: float = 0.005, basis: str | None = None, atom_index: int = 0, axis: int = 2, bond_pair: tuple[int, int] | None = None, dual_bond_axes: str | None = None, m1: float | None = None, m2: float | None = None,
 										   enable_stabilized_attempt: bool = True,

@@ -8,7 +8,7 @@ in PySCF calculations, which can cause SCF convergence failures.
 
 import numpy as np
 from pyscf import gto, scf
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Any, cast
 
 
 def check_overlap_condition_number(mol: gto.Mole, threshold: float = 1e7) -> Tuple[float, bool]:
@@ -93,13 +93,16 @@ def stabilize_scf_convergence(mf, overlap_threshold: float = 1e7) -> None:
             if condition_num > 5e6:
                 mf.conv_tol = max(1e-7, original_conv_tol * 5)  # Relax by factor of 5 for better convergence
                 print(f"Relaxed initial SCF convergence: {original_conv_tol:.2e} → {mf.conv_tol:.2e}")
-                mf._original_conv_tol = original_conv_tol
+                cast(Any, mf).original_conv_tol = original_conv_tol
             else:
                 print(f"Condition number {condition_num:.2e} acceptable for tight convergence")
-                mf._original_conv_tol = original_conv_tol
+                cast(Any, mf).original_conv_tol = original_conv_tol
 
 def robust_scf_calculation(atom_string: str, spin: int, basis: Optional[str] = None, 
-                          target_conv_tol: float = 1e-8, max_cycle: int = 400) -> scf.hf.SCF:
+                          target_conv_tol: float = 1e-8, max_cycle: int = 400,
+                          initial_conv_tol: Optional[float] = None,
+                          initial_level_shift: Optional[float] = None,
+                          initial_diis_space: Optional[int] = None) -> scf.hf.SCF:
     """
     Perform a SCF calculation with automatic overlap matrix singularity handling.
     
@@ -115,6 +118,12 @@ def robust_scf_calculation(atom_string: str, spin: int, basis: Optional[str] = N
         Target convergence tolerance (default: 1e-8, increased for stability)
     max_cycle : int
         Maximum SCF cycles
+    initial_conv_tol : float | None
+        Optional relaxed tolerance for the stabilized run prior to tightening
+    initial_level_shift : float | None
+        Optional user-specified level shift to apply before stabilization
+    initial_diis_space : int | None
+        Optional override for the DIIS subspace dimension during stabilization
         
     Returns:
     --------
@@ -148,12 +157,20 @@ def robust_scf_calculation(atom_string: str, spin: int, basis: Optional[str] = N
         mf = scf.UHF(mol)
     else:
         mf = scf.RHF(mol)
-    
+
     # Apply stabilization techniques based on overlap condition
     stabilize_scf_convergence(mf, overlap_threshold=1e7)
-    
-    # Set cycle limit
+
+    # Allow callers to override baseline stabilization knobs
     mf.max_cycle = max_cycle
+    if initial_diis_space is not None and hasattr(mf, 'diis_space'):
+        mf.diis_space = initial_diis_space
+    if initial_level_shift is not None:
+        mf.level_shift = initial_level_shift
+    if initial_conv_tol is not None:
+        mf.conv_tol = initial_conv_tol
+        if not hasattr(mf, 'original_conv_tol'):
+            cast(Any, mf).original_conv_tol = initial_conv_tol
     
     # Run initial SCF with stabilization
     print("Running SCF with stabilization...")
@@ -174,7 +191,7 @@ def robust_scf_calculation(atom_string: str, spin: int, basis: Optional[str] = N
             raise RuntimeError("SCF failed to converge even with aggressive stabilization")
     
     # If we used a relaxed tolerance and want to tighten it
-    if hasattr(mf, '_original_conv_tol') and mf.conv_tol > target_conv_tol:
+    if hasattr(mf, 'original_conv_tol') and mf.conv_tol > target_conv_tol:
         print(f"Tightening convergence from {mf.conv_tol:.2e} to {target_conv_tol:.2e}")
         
         # Gradually tighten convergence

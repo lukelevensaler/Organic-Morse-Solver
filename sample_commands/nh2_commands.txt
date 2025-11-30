@@ -7,7 +7,7 @@ H -2.0305 -0.3861 -0.0001" \
   --bond "(1,2);(1,3)" \
   --delta 0.01 \
   --fwhm 10 \
-  --scaling-factor 81 \
+  --scaling-factor 83 \
   --basis aug-cc-pVDZ
 
 
