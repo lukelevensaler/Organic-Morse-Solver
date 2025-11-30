@@ -36,7 +36,7 @@ class DipoleDerivativeResult:
 
 # ===== MAXIMUM PRECISION DIPOLE DERIVATIVE SOLVING WITH SCF ONLY =======
 #
-# This module now implements a deterministic SCF-only approach:
+# This module now implements a deterministic SCF approach:
 # - Dipole moment computed at SCF level (since SCF excels at reproducibility)
 # - Tight but practical SCF convergence used for all prerequisite calculations
 # - No triples corrections or correlated densities are involved
@@ -64,7 +64,7 @@ def dipole_for_geometry(atom_string: str, spin: int, basis: str | None = None,
 	To guarantee deterministic behaviour and avoid run-to-run variation
 	from correlated-method convergence issues, this implementation *always*
 	uses SCF densities for the dipole evaluation. Geometry optimization is also
-	implemented with SCF-only gradients.
+	implemented with SCF gradients.
 
 	Parameters
 	----------

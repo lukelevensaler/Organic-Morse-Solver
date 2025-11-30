@@ -111,7 +111,7 @@ def compute(
 		delta_val = float(delta) if delta is not None else 0.01
   
 		# Show theory level information 
-		typer.secho("Beginning SCF-only ab initio molecular geometry optimization and dipole derivative calculation.", fg="green", bold=True)
+		typer.secho("Beginning SCF ab initio molecular geometry optimization and dipole derivative calculation.", fg="green", bold=True)
 		
 		# Parse atoms from coordinate string for the workflow
 		coord_lines = [ln.strip() for ln in coords.splitlines() if ln.strip()]
@@ -282,7 +282,7 @@ def compute(
 	eps_max = epsilon_peak_from_integrated(integrated, fwhm)
 	
 	typer.echo(f"\n=== RESULTS ===")
-	typer.echo(f"Computed M_0-> {overtone_order}: {Mval:.25e} Debye ({Mval_SI:.25e} C·m)")
+	typer.echo(f"Computed M_0-> {overtone_order}: {Mval:.25e} Debye")
 	typer.echo(f"Integrated molar absorptivity: {integrated:.25e} cm M^-1")
 	typer.echo(f"Final ε_max: {eps_max:.25e} M^-1 cm^-1")
 

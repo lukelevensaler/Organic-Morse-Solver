@@ -42,8 +42,9 @@ def setup_globals(A, B, fundamental_frequency, observed_frequency, overtone_orde
 	hc = scipy.constants.Planck * scipy.constants.speed_of_light * 100  # h*c in J*cm
 	D_e = D_e_cm * hc
 
-	# harmonic angular frequency
-	w_e = 2 * (np.pi) * (scipy.constants.speed_of_light) * ṽ_e
+	# harmonic angular frequency in rad/s; convert ṽ_e from cm^-1 to m^-1 first
+	ṽ_e_meters = ṽ_e * 100.0
+	w_e = 2 * np.pi * scipy.constants.speed_of_light * ṽ_e_meters
 
 	# morse paramter a; use |D_e| to ensure a real, positive value
 	a = w_e / np.sqrt((2 * abs(D_e)) / µ)
