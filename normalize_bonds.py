@@ -121,11 +121,20 @@ def create_symmetric_antisymmetric_vectors(positions: np.ndarray, atoms: list[st
 
 def process_bond_displacements(positions, atoms, dual_bond_axes=None, bond_pair=None, 
                               delta=0.01, m1=None, m2=None, atom_index=0, axis=2):
-    """Process bond displacements for various bond configurations."""
+    """Process bond displacements for various bond configurations.
+
+    Returns
+    -------
+    tuple[np.ndarray, np.ndarray, callable, np.ndarray]
+        Tuple containing +Δ positions, -Δ positions, a formatter that converts
+        cartesian arrays back into an XYZ block, and the unit displacement
+        direction (Å) that was scaled by ``delta`` to generate the ± structures.
+    """
     # create displaced geometries
     pos0 = positions.copy()
     pos_plus = positions.copy()
     pos_minus = positions.copy()
+    direction = np.zeros_like(positions, dtype=float)
 
     # Handle dual bond axes case with symmetric/antisymmetric combinations
     if dual_bond_axes is not None:
@@ -155,6 +164,7 @@ def process_bond_displacements(positions, atoms, dual_bond_axes=None, bond_pair=
         # Scale by delta and apply displacements
         pos_plus += displacement_coords * delta
         pos_minus -= displacement_coords * delta
+        direction = displacement_coords
         
         print("Applied mass-weighted symmetric stretch displacement")
         
@@ -175,14 +185,17 @@ def process_bond_displacements(positions, atoms, dual_bond_axes=None, bond_pair=
         # inverse for the - geometry
         pos_minus[i] -= unit * half
         pos_minus[j] += unit * half
+        direction[i] = unit * 0.5
+        direction[j] = -unit * 0.5
     else:
         # Cartesian axis displacement (default behavior)
         pos_plus[atom_index, axis] += delta
         pos_minus[atom_index, axis] -= delta
+        direction[atom_index, axis] = 1.0
 
     # helper to build XYZ block string
     def block_from_positions(pos_array):
         return "\n".join(f"{atom} {x:.6f} {y:.6f} {z:.6f}" 
             for atom, (x, y, z) in zip(atoms, pos_array))
     
-    return pos_plus, pos_minus, block_from_positions
+    return pos_plus, pos_minus, block_from_positions, direction

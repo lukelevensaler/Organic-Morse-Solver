@@ -12,6 +12,7 @@ dependencies:
   - rich
   - mpi4py
   - mpich
+  - mpmath
   - pyscf
   - pyberny
   - tqdm

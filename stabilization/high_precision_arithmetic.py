@@ -10,9 +10,17 @@ import numpy as np
 from decimal import Decimal, getcontext
 import scipy.special
 
+try:
+    import mpmath as mp
+except ImportError:  # pragma: no cover - optional dependency
+    mp = None
+
 # Set high precision - but keep it tractable for performance.
 # 200 digits is ample for the dynamic ranges we encounter here.
 getcontext().prec = 200
+if mp is not None:
+    mp.mp.dps = 120
+
 
 def high_precision_log_gamma(x):
     """
@@ -396,3 +404,223 @@ def high_precision_S2_0n(n, a, lambda_val):
 
     print(f"HighPrec S2_0n: final result = {total}")
     return float(total)
+
+
+def _mp_morse_integral(beta, lambda_val, k: int):
+    """Evaluate ∫_0^∞ y^{β-1} e^{-y} [ln(y) - ln(2λ)]^k dy with mpmath."""
+    if mp is None:
+        raise RuntimeError("mpmath is required for high-order Morse integrals; please install it.")
+    if beta <= 0:
+        return mp.mpf('0')
+
+    log_shift = mp.log(2 * lambda_val)
+
+    def integrand(y):
+        if y == 0:
+            return mp.mpf('0')
+        return (y ** (beta - 1)) * mp.e ** (-y) * (mp.log(y) - log_shift) ** k
+
+    return mp.quad(integrand, [0, mp.inf])
+
+
+def high_precision_Sk_0n_numeric(n: int, a: float, lambda_val: float, k: int) -> float:
+    """Numerically integrate S_k^{(0,n)} for k ≥ 1 using high-precision quadrature."""
+    if mp is None:
+        raise RuntimeError("mpmath is required for high-order Morse integrals; please install it.")
+    if k < 1:
+        raise ValueError("k must be >= 1")
+
+    mp_a = mp.mpf(str(a))
+    mp_lambda = mp.mpf(str(lambda_val))
+    alpha_n = 2 * mp_lambda - 2 * n - 1
+
+    # Normalization constants converted to mpmath
+    N0 = mp.mpf(str(high_precision_N_v(0, float(a), float(lambda_val))))
+    Nn = mp.mpf(str(high_precision_N_v(n, float(a), float(lambda_val))))
+
+    common_num = mp.gamma(n + alpha_n + 1)
+    total = mp.mpf('0')
+
+    for m in range(n + 1):
+        denom = mp.gamma(n - m + 1) * mp.gamma(alpha_n + m + 1)
+        if denom == 0:
+            continue
+        c_m = common_num / denom
+        beta = 2 * mp_lambda - 5 + m
+        if beta <= 0:
+            continue
+        integral_val = _mp_morse_integral(beta, mp_lambda, k)
+        term = ((-1) ** m) * c_m / mp.factorial(m) * integral_val
+        total += term
+
+    prefactor = N0 * Nn * ((-1 / mp_a) ** k)
+    result = prefactor * total
+    return float(result)
+
+
+def high_precision_S3_0n(n: int, a: float, lambda_val: float) -> float:
+    """High-precision S3 = <ψ_0|Q^3|ψ_n> using analytic polygamma form."""
+    return _mp_high_precision_Sk_0n_logsum(n, a, lambda_val, k=3)
+
+
+def high_precision_S4_0n(n: int, a: float, lambda_val: float) -> float:
+    """High-precision S4 = <ψ_0|Q^4|ψ_n> using analytic polygamma form."""
+    return _mp_high_precision_Sk_0n_logsum(n, a, lambda_val, k=4)
+
+
+def _ensure_mpmath_precision(min_dps: int = 150) -> None:
+    """Raise the working precision for mpmath when larger sums demand it."""
+    if mp is None:
+        raise RuntimeError("mpmath is required for high-order Morse integrals; please install it.")
+    if mp.mp.dps < min_dps:
+        mp.mp.dps = min_dps
+
+
+def _mp_log_N_v(v: int, a: float, lambda_val: float):
+    """Compute log(N_v) with mpmath to avoid Decimal exponent limits."""
+    _ensure_mpmath_precision()
+    mp_a = mp.mpf(str(a))
+    mp_lambda = mp.mpf(str(lambda_val))
+    mp_v = mp.mpf(v)
+    factor = 2 * mp_lambda - 2 * mp_v - 1
+    if factor <= 0:
+        raise ValueError(f"Invalid normalization factor for v={v}, λ={lambda_val}")
+    log_N = mp.mpf('0.5') * (
+        mp.log(mp_a)
+        + mp.log(factor)
+        + mp.loggamma(mp_v + 1)
+        - mp.loggamma(2 * mp_lambda - mp_v)
+    )
+    print(f"HighPrec mp_log_N_v: log(N_{v}) = {log_N}")
+    return log_N
+
+
+def _mp_log_I_beta(beta, lambda_val, k: int) -> tuple[int, "mp.mpf"]:
+    """Return (sign, log|I_k|) for the shifted logarithmic integral."""
+    _ensure_mpmath_precision()
+    log_gamma_beta = mp.loggamma(beta)
+    shift = mp.log(2 * lambda_val)
+    psi0 = mp.digamma(beta)
+    h1 = psi0 - shift
+
+    if k == 1:
+        bracket = h1
+    elif k == 2:
+        psi1 = mp.polygamma(1, beta)
+        bracket = h1 ** 2 + psi1
+    elif k == 3:
+        psi1 = mp.polygamma(1, beta)
+        psi2 = mp.polygamma(2, beta)
+        bracket = h1 ** 3 + 3 * h1 * psi1 + psi2
+    elif k == 4:
+        psi1 = mp.polygamma(1, beta)
+        psi2 = mp.polygamma(2, beta)
+        psi3 = mp.polygamma(3, beta)
+        bracket = (
+            h1 ** 4
+            + 6 * h1 ** 2 * psi1
+            + 3 * psi1 ** 2
+            + 4 * h1 * psi2
+            + psi3
+        )
+    else:  # pragma: no cover - future extension hook
+        raise ValueError(f"Unsupported integral order k={k}")
+
+    if bracket == 0:
+        return 0, mp.ninf
+
+    sign = 1 if bracket > 0 else -1
+    log_abs = log_gamma_beta + mp.log(mp.fabs(bracket))
+    print(f"HighPrec mp_log_I_beta: k={k}, beta={beta}, log_abs={log_abs}, sign={sign}")
+    return sign, log_abs
+
+
+def _mp_signed_log_sum(log_terms, term_signs: list[int]) -> tuple[int, "mp.mpf"]:
+    """Combine huge terms in log-space with mpmath precision."""
+    if not log_terms:
+        return 0, mp.ninf
+
+    Lmax = max(log_terms)
+    scaled_total = mp.mpf('0')
+
+    print(f"HighPrec mp_signed_log_sum: Lmax = {Lmax}")
+    for idx, (log_term, sign) in enumerate(zip(log_terms, term_signs)):
+        contribution = sign * mp.exp(log_term - Lmax)
+        scaled_total += contribution
+        print(
+            "HighPrec mp_signed_log_sum: term",
+            idx,
+            "sign=",
+            sign,
+            "log_abs=",
+            log_term,
+            "scaled=",
+            contribution,
+        )
+
+    if scaled_total == 0:
+        return 0, mp.ninf
+
+    sign_total = 1 if scaled_total > 0 else -1
+    log_abs_total = Lmax + mp.log(mp.fabs(scaled_total))
+    print(
+        f"HighPrec mp_signed_log_sum: scaled_total={scaled_total}, sign={sign_total}, log_abs={log_abs_total}"
+    )
+    return sign_total, log_abs_total
+
+
+def _mp_high_precision_Sk_0n_logsum(n: int, a: float, lambda_val: float, k: int) -> float:
+    """Generalised high-precision Sk using analytic polygamma expressions."""
+    if mp is None:
+        raise RuntimeError("mpmath is required for high-order Morse integrals; please install it.")
+
+    _ensure_mpmath_precision()
+
+    print(f"HighPrec Sk_0n (analytic): n={n}, a={a:.6e}, λ={lambda_val:.6e}, k={k}")
+
+    mp_a = mp.mpf(str(a))
+    mp_lambda = mp.mpf(str(lambda_val))
+    alpha_n = 2 * mp_lambda - 2 * n - 1
+
+    log_common = mp.loggamma(n + alpha_n + 1)
+
+    log_terms = []
+    term_signs: list[int] = []
+
+    for m in range(n + 1):
+        beta = 2 * mp_lambda - 5 + m
+        if beta <= 0:
+            continue
+
+        log_c_m = (
+            log_common
+            - mp.loggamma(n - m + 1)
+            - mp.loggamma(alpha_n + m + 1)
+        )
+
+        if m == 0:
+            log_m_fact = mp.mpf('0')
+        else:
+            log_m_fact = mp.loggamma(m + 1)
+
+        sign_I, log_abs_I = _mp_log_I_beta(beta, mp_lambda, k)
+        if sign_I == 0:
+            continue
+
+        term_sign = ((-1) ** m) * sign_I
+        log_terms.append(log_c_m + log_abs_I - log_m_fact)
+        term_signs.append(int(term_sign))
+
+    sign_sum, log_abs_sum = _mp_signed_log_sum(log_terms, term_signs)
+    if sign_sum == 0:
+        return 0.0
+
+    log_prefactor = _mp_log_N_v(0, a, lambda_val) + _mp_log_N_v(n, a, lambda_val) - k * mp.log(mp_a)
+    sum_sign = sign_sum * ((-1) ** k)
+    log_abs_total = log_prefactor + log_abs_sum
+
+    result = sum_sign * mp.exp(log_abs_total)
+    print(
+        f"HighPrec Sk_0n (analytic): sign={sum_sign}, log_abs_total={log_abs_total}, result={result}"
+    )
+    return float(result)

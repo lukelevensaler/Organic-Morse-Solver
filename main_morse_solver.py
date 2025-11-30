@@ -4,6 +4,10 @@ import scipy.special
 
 from stabilization import high_precision_arithmetic as hp
 
+# === Unit Conversion Constants ===
+DEBYE_TO_C_M = 3.33564e-30  # 1 Debye in Coulomb·meter
+ANGSTROM_TO_M = 1e-10       # 1 Ångström in meters
+
 # ===== BASICS ======
 # Note: compute all quantities at runtime via setup_globals(...) to avoid
 # referencing undefined names at import time (A, B, etc. were placeholders).
@@ -127,6 +131,33 @@ def N_v(v, a, λ):
 		return result
 
 
+def _convert_mu_derivative_to_SI(mu_value: float, order: int) -> float:
+	"""Convert µ-derivative expressed in Debye·Å^{-order} to SI.
+
+	Parameters
+	----------
+	mu_value : float
+		Derivative magnitude in Debye per Å^{order}.
+	order : int
+		Derivative order (1 → µ′, 2 → µ″, etc.).
+
+	Returns
+	-------
+	float
+		Derivative in Coulomb·meter^{1-order} suitable for SI overlap integrals.
+	"""
+	if mu_value == 0.0:
+		return 0.0
+	return mu_value * DEBYE_TO_C_M / (ANGSTROM_TO_M ** order)
+
+
+def _overlap_in_angstrom_units(overlap_value: float, power: int) -> float:
+	"""Express overlap integral ⟨Q^power⟩ in Å^{power} for Debye bookkeeping."""
+	if power == 0:
+		return overlap_value
+	return overlap_value / (ANGSTROM_TO_M ** power)
+
+
 # ===== DIPLOE EXPANSION & OVERLAP INTEGRALS =====
 
 # Dipole expansion around Q=0 (user variables preserved):
@@ -231,35 +262,25 @@ def S2(v_i, v_f, a, λ):
 
 # Transition dipole using low-order expansion
 def M_if(v_i, v_f, a, λ, µ_prime, µ_double_prime=0.0):
-	"""Approximate vibrational transition dipole M_{i->f}.
+	"""Approximate transition dipole ``M_{i→f}`` returned in Debye.
 
-	Parameters
-	----------
-	v_i, v_f : int
-		Initial and final vibrational quantum numbers.
-	a : float
-		Morse parameter a (units: 1/length, e.g., 1/m).
-	λ : float
-		Dimensionless Morse parameter.
-	µ_prime : float
-		First derivative of the molecular dipole at equilibrium, µ_prime(0)
-		(units: C·m per meter, i.e., C). Typical molecular-scale
-		vibrational derivatives are ~1e-30 to 1e-29 C·m/m for X–H/O–H/N–H
-		stretches (user should supply an appropriate value).
-	µ_double_prime : float, optional
-		Second derivative µ_double_prime(0) (units: C·m per m^2). Typical scales
-		are ~1e-40 to 1e-39 C·m/m^2. Default 0.0 to ignore quadratic term.
-
-	Returns
-	-------
-	M : float
-		Transition dipole (C·m).
+	The inputs ``µ_prime`` / ``µ_double_prime`` are now expected in Debye per Å
+	and Debye per Å² respectively. They are converted internally to SI before
+	forming the overlap with ``S₁`` and ``S₂``. The returned transition dipole
+	is expressed in Debye for user-facing convenience, while downstream
+	intensity formulas convert back to SI as needed.
 	"""
-	# µ_prime = µ_prime(0), µ_double_prime = µ_double_prime(0)
-	M = µ_prime * S1(v_i, v_f, a, λ)
+	S1_val = S1(v_i, v_f, a, λ)
+	S2_val = S2(v_i, v_f, a, λ)
+
+	mu1_si = _convert_mu_derivative_to_SI(µ_prime, 1)
+	mu2_si = _convert_mu_derivative_to_SI(µ_double_prime, 2)
+
+	M_si = mu1_si * S1_val
 	if µ_double_prime != 0.0:
-		M += 0.5 * µ_double_prime * S2(v_i, v_f, a, λ)
-	return M
+		M_si += 0.5 * mu2_si * S2_val
+
+	return M_si / DEBYE_TO_C_M
 
 
 # ===== Associated Laguerre and 0→n overtone overlaps =====
@@ -308,62 +329,84 @@ def S2_0n(n, a, λ):
 	return hp.high_precision_S2_0n(n, float(a), float(λ))
 
 
-def M_0n(n, a, λ, µ_prime, µ_double_prime=0.0):
-	"""Convenience wrapper: compute M_{0->n} ≈ µ_prime*S1 + 0.5*µ_double_prime*S2
+def S3_0n(n, a, λ):
+	"""Compute S3 = <ψ_0|Q^3|ψ_n> using high-precision quadrature."""
+	return hp.high_precision_S3_0n(n, float(a), float(λ))
 
-	Parameters
-	----------
-	n : int
-		Overtone quantum number (final state).
-	a, λ : floats
-		Morse parameters (see file-level definitions).
-	µ_prime : float
-		µ_prime(0) (units: C·m/m). Typical expected range: 1e-30 -- 1e-29 C·m/m.
-	µ_double_prime : float, optional
-		µ_double_prime(0) (units: C·m/m^2). Typical expected range: 1e-40 -- 1e-39 C·m/m^2.
 
-	Returns
-	-------
-	M : float
-		Transition dipole M_{0->n} in C·m.
+def S4_0n(n, a, λ):
+	"""Compute S4 = <ψ_0|Q^4|ψ_n> using high-precision quadrature."""
+	return hp.high_precision_S4_0n(n, float(a), float(λ))
+
+
+def M_0n(n, a, λ, µ_prime, µ_double_prime=0.0, µ_triple_prime=0.0, µ_quadruple_prime=0.0):
+	"""Compute the 0→n transition dipole and return it in Debye.
+
+	All µ-derivatives are expected in Debye per Å^k. The function converts
+	them to SI values for the internal overlap evaluation, but reports all
+	intermediate and final transition dipoles in Debye for user-facing output.
 	"""
-	# Standard calculation
 	S1 = S1_0n(n, a, λ)
 	S2 = S2_0n(n, a, λ)
-	
-	# Debug output for overlap integrals
-	print(f"Debug: S1 overlap integral = {S1:.6e}")
-	print(f"Debug: S2 overlap integral = {S2:.6e}")
-	
-	M = µ_prime * S1
-	print(f"Debug: μ1 * S1 = {µ_prime:.6e} * {S1:.6e} = {M:.6e}")
-	
+	S3 = S3_0n(n, a, λ) if µ_triple_prime != 0.0 else 0.0
+	S4 = S4_0n(n, a, λ) if µ_quadruple_prime != 0.0 else 0.0
+
+	S1_angstrom = _overlap_in_angstrom_units(S1, 1)
+	S2_angstrom2 = _overlap_in_angstrom_units(S2, 2)
+	S3_angstrom3 = _overlap_in_angstrom_units(S3, 3) if µ_triple_prime != 0.0 else 0.0
+	S4_angstrom4 = _overlap_in_angstrom_units(S4, 4) if µ_quadruple_prime != 0.0 else 0.0
+
+	print(f"Debug: S1 overlap integral = {S1:.6e} (≈ {S1_angstrom:.6e} Å)")
+	print(f"Debug: S2 overlap integral = {S2:.6e} (≈ {S2_angstrom2:.6e} Å²)")
+	if µ_triple_prime != 0.0:
+		print(f"Debug: S3 overlap integral = {S3:.6e} (≈ {S3_angstrom3:.6e} Å³)")
+	if µ_quadruple_prime != 0.0:
+		print(f"Debug: S4 overlap integral = {S4:.6e} (≈ {S4_angstrom4:.6e} Å⁴)")
+
+	mu1_si = _convert_mu_derivative_to_SI(µ_prime, 1)
+	mu2_si = _convert_mu_derivative_to_SI(µ_double_prime, 2)
+	mu3_si = _convert_mu_derivative_to_SI(µ_triple_prime, 3)
+	mu4_si = _convert_mu_derivative_to_SI(µ_quadruple_prime, 4)
+
+	M_si = mu1_si * S1
+	M1_debye = µ_prime * S1_angstrom
+	print(f"Debug: μ1 * S1 = {µ_prime:.6e} Debye/Å * {S1_angstrom:.6e} Å = {M1_debye:.6e} Debye")
+
 	if µ_double_prime != 0.0:
-		M2_contrib = 0.5 * µ_double_prime * S2
-		print(f"Debug: 0.5 * μ2 * S2 = 0.5 * {µ_double_prime:.6e} * {S2:.6e} = {M2_contrib:.6e}")
-		M += M2_contrib
-		print(f"Debug: Total M = {M:.6e}")
+		M2_si = 0.5 * mu2_si * S2
+		M2_debye = 0.5 * µ_double_prime * S2_angstrom2
+		print(f"Debug: 0.5 * μ2 * S2 = 0.5 * {µ_double_prime:.6e} Debye/Å² * {S2_angstrom2:.6e} Å² = {M2_debye:.6e} Debye")
+		M_si += M2_si
+		print(f"Debug: Total M = {(M_si / DEBYE_TO_C_M):.6e} Debye")
 	else:
 		print("Debug: μ2 = 0, no second-order contribution")
-	
-	return M
+
+	if µ_triple_prime != 0.0:
+		M3_si = (1.0 / 6.0) * mu3_si * S3
+		M3_debye = (1.0 / 6.0) * µ_triple_prime * S3_angstrom3
+		print(f"Debug: (1/6) * μ3 * S3 = (1/6) * {µ_triple_prime:.6e} Debye/Å³ * {S3_angstrom3:.6e} Å³ = {M3_debye:.6e} Debye")
+		M_si += M3_si
+		print(f"Debug: Total M after cubic term = {(M_si / DEBYE_TO_C_M):.6e} Debye")
+	else:
+		print("Debug: μ3 = 0, no third-order contribution")
+
+	if µ_quadruple_prime != 0.0:
+		M4_si = (1.0 / 24.0) * mu4_si * S4
+		M4_debye = (1.0 / 24.0) * µ_quadruple_prime * S4_angstrom4
+		print(f"Debug: (1/24) * μ4 * S4 = (1/24) * {µ_quadruple_prime:.6e} Debye/Å⁴ * {S4_angstrom4:.6e} Å⁴ = {M4_debye:.6e} Debye")
+		M_si += M4_si
+		print(f"Debug: Total M after quartic term = {(M_si / DEBYE_TO_C_M):.6e} Debye")
+	else:
+		print("Debug: μ4 = 0, no fourth-order contribution")
+
+	return M_si / DEBYE_TO_C_M
 
 
 # Conversion to integrated molar absorptivity and peak ε for Gaussian lineshape
-def integrated_molar_absorptivity(M):
-	"""Return integrated molar absorptivity (cm M^-1) from transition dipole M (C·m).
-
-	Parameters
-	----------
-	M : float
-		Transition dipole in C·m.
-
-	Returns
-	-------
-	integrated : float
-		Integrated molar absorptivity, in units cm M^-1.
-	"""
-	return 4.319e-9 * (np.abs(M)**2)
+def integrated_molar_absorptivity(M_debye: float):
+	"""Return integrated molar absorptivity (cm M⁻¹) given ``M`` in Debye."""
+	M_abs = np.abs(M_debye)
+	return 4.319e-9 * (M_abs ** 2)
 
 
 def epsilon_peak_from_integrated(integrated, fwhm_cm_inv):

@@ -78,6 +78,11 @@ def compute(
 
 	# prepare bond_pair default
 	bond_pair = None
+	µ_prime = 0.0
+	µ_double_prime = 0.0
+	µ_triple_prime = 0.0
+	µ_quadruple_prime = 0.0
+	optimized_coords = None
 
 	# If coordinates are provided compute µ_prime and µ_double_prime via PySCF finite-difference
 	if coords is not None:
@@ -119,7 +124,7 @@ def compute(
 		
 		# Use the complete workflow function
 		try:
-			µ_prime_val, µ_double_prime_val, optimized_coords = full_pre_morse_dipole_workflow(
+			derivatives, optimized_coords = full_pre_morse_dipole_workflow(
 				initial_coords=coords,
 				atoms=atoms,
 				specified_spin=specified_spin_int,
@@ -134,8 +139,10 @@ def compute(
 		except Exception as e:
 			typer.secho(f"SCF workflow failed: {e}", fg="red", err=True)
 			raise typer.Exit(code=2)
-		µ_prime = float(µ_prime_val)
-		µ_double_prime = float(µ_double_prime_val)
+		µ_prime = float(derivatives.mu_prime)
+		µ_double_prime = float(derivatives.mu_double_prime)
+		µ_triple_prime = float(derivatives.mu_triple_prime)
+		µ_quadruple_prime = float(derivatives.mu_quadruple_prime)
 	else:
 		# If coords were not provided, require interactive coordinate entry
 		atom_input = typer.prompt("Enter atoms as a comma-separated list (e.g. N,H,H)", type=str)
@@ -205,7 +212,7 @@ def compute(
 			
 			# Use the complete workflow function
 			try:
-				µ_prime_val, µ_double_prime_val, optimized_coords = full_pre_morse_dipole_workflow(
+				derivatives, optimized_coords = full_pre_morse_dipole_workflow(
 					initial_coords=coords,
 					atoms=atoms,
 					specified_spin=specified_spin_int,
@@ -220,12 +227,16 @@ def compute(
 			except Exception as e:
 				typer.secho(f"SCF workflow failed: {e}", fg="red", err=True)
 				raise typer.Exit(code=2)
-			µ_prime = float(µ_prime_val)
-			µ_double_prime = float(µ_double_prime_val)
+			µ_prime = float(derivatives.mu_prime)
+			µ_double_prime = float(derivatives.mu_double_prime)
+			µ_triple_prime = float(derivatives.mu_triple_prime)
+			µ_quadruple_prime = float(derivatives.mu_quadruple_prime)
 		else:
 			# If somehow coords is empty, fall back to prompting for derivatives
-			µ_prime = typer.prompt("First derivative of dipole at equilibrium µ_prime(0) in C·m/m", type=float, default=1e-30)
-			µ_double_prime = typer.prompt("Second derivative µ_double_prime(0) in C·m/m^2", type=float, default=0.0)
+			µ_prime = typer.prompt("First derivative of dipole at equilibrium µ_prime(0) in Debye/Å", type=float, default=0.0)
+			µ_double_prime = typer.prompt("Second derivative µ_double_prime(0) in Debye/Å²", type=float, default=0.0)
+			µ_triple_prime = typer.prompt("Third derivative µ_triple_prime(0) in Debye/Å³", type=float, default=0.0)
+			µ_quadruple_prime = typer.prompt("Fourth derivative µ_quadruple_prime(0) in Debye/Å⁴", type=float, default=0.0)
 
 	# prompt for fwhm if still None
 	if fwhm is None:
@@ -240,20 +251,25 @@ def compute(
 	if coords is None:
 		µ_prime = float(µ_prime)
 		µ_double_prime = float(µ_double_prime)
+		µ_triple_prime = float(µ_triple_prime)
+		µ_quadruple_prime = float(µ_quadruple_prime)
 	if fwhm is None:
 		fwhm = 50.0
 	fwhm = float(fwhm)
 	# Add detailed debugging output with ultra-high precision
-	typer.echo(f"Debug: µ_prime(0) = {µ_prime:.20e} C·m/m")
-	typer.echo(f"Debug: µ_double_prime(0) = {µ_double_prime:.20e} C·m/m^2")
+	typer.echo(f"Debug: µ_prime(0) = {µ_prime:.20e} Debye/Å")
+	typer.echo(f"Debug: µ_double_prime(0) = {µ_double_prime:.20e} Debye/Å²")
+	typer.echo(f"Debug: µ_triple_prime(0) = {µ_triple_prime:.20e} Debye/Å³")
+	typer.echo(f"Debug: µ_quadruple_prime(0) = {µ_quadruple_prime:.20e} Debye/Å⁴")
 	typer.echo(f"Debug: Morse parameter a = {mm.a:.20e}")
 	typer.echo(f"Debug: Morse parameter λ = {mm.λ:.20e}")
 	typer.echo(f"Debug: Overtone order n = {overtone_order}")
 	
 	try:
 		# retrieve a and λ from the main module after setup_globals ran
-		Mval = M_0n(overtone_order, mm.a, mm.λ, µ_prime, µ_double_prime)
-		typer.echo(f"Debug: Raw transition dipole M = {Mval:.25e} C·m")
+		Mval = M_0n(overtone_order, mm.a, mm.λ, µ_prime, µ_double_prime, µ_triple_prime, µ_quadruple_prime)
+		Mval_SI = Mval * mm.DEBYE_TO_C_M
+		typer.echo(f"Debug: Raw transition dipole M = {Mval:.25e} Debye ({Mval_SI:.25e} C·m)")
 		typer.echo("This value could be either negative or positive.")
 		
 		# Check if the value is exactly zero
@@ -281,7 +297,7 @@ def compute(
 		total_scaling = 10 ** scaling_exponent
 	
 	typer.echo(f"\n=== RESULTS ===")
-	typer.echo(f"Computed M_0-> {overtone_order}: {Mval:.25e} C·m")
+	typer.echo(f"Computed M_0-> {overtone_order}: {Mval:.25e} Debye ({Mval_SI:.25e} C·m)")
 	typer.echo(f"Integrated molar absorptivity: {integrated:.25e} cm M^-1")
 	typer.echo(f"Estimated ε_max: {eps_max:.25e} M^-1 cm^-1")
 	
